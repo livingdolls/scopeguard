@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,13 +11,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	systemhttp "github.com/livingdolls/scopeguard/apps/api/internal/modules/system/adapters/inbound/http"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/system/application"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/config"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/database"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/httpapi"
 )
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// load .env if present
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		logger.Error("failed to load .env", "error", err)
+		os.Exit(1)
+	}
 
 	if err := run(logger); err != nil {
 		logger.Error("application startup failed", "error", err)
@@ -25,12 +35,47 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	// load config
+	cfg, err := config.Load()
+
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	// handle termination signal
+
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+
+	defer stop()
+
+	// initialize Postgres Pool
+	dbCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+
+	pool, err := database.NewPool(dbCtx, cfg.DatabaseURL, cfg.DBMaxConnections)
+	cancel()
+
+	if err != nil {
+		return fmt.Errorf("initialize database pool: %w", err)
+	}
+	defer pool.Close()
+
+	logger.Info("PostgresSQL connected")
+
+	//initialize application service
 	healthService := application.NewHealthService()
+
+	//initialize inbound adapter
 	healthHandler := systemhttp.NewHandler(healthService)
 
+	//register http routes
 	router := httpapi.NewRouter()
 	healthHandler.RegisterRoutes(router)
 
+	//configure http server
 	server := &http.Server{
 		Handler:           router,
 		Addr:              ":8080",
@@ -41,14 +86,6 @@ func run(logger *slog.Logger) error {
 		MaxHeaderBytes:    1 << 20,
 	}
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-
-	defer stop()
-
 	serverErr := make(chan error, 1)
 
 	go func() {
@@ -57,25 +94,28 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("Server started", "addr", server.Addr)
 
+	// wait for termination or server failure
 	select {
 	case <-ctx.Done():
 		logger.Info("Shutdown signal received")
 
 	case err := <-serverErr:
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return fmt.Errorf("HTTP server error: %w", err)
 		}
 
 		return nil
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	// gracefully shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
+		_ = server.Close()
 		return fmt.Errorf("shutdown HTTP server: %w", err)
 	}
 
-	logger.Info("Shutdown complete")
+	logger.Info("HTTP server stopped")
 	return nil
 }
