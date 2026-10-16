@@ -13,6 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 	systemhttp "github.com/livingdolls/scopeguard/apps/api/internal/modules/system/adapters/inbound/http"
+	systempostgres "github.com/livingdolls/scopeguard/apps/api/internal/modules/system/adapters/outbound/postgres"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/system/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/config"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/database"
@@ -65,15 +66,21 @@ func run(logger *slog.Logger) error {
 
 	logger.Info("PostgresSQL connected")
 
+	// initalize outbound adapters
+	databaseProbe := systempostgres.NewDatabaseProbe(pool)
+
 	//initialize application service
 	healthService := application.NewHealthService()
+	readinessService := application.NewReadinessService(databaseProbe)
 
 	//initialize inbound adapter
 	healthHandler := systemhttp.NewHandler(healthService)
+	readinessHandler := systemhttp.NewReadinessHandler(readinessService, logger)
 
 	//register http routes
 	router := httpapi.NewRouter()
 	healthHandler.RegisterRoutes(router)
+	readinessHandler.RegisterRoutes(router)
 
 	//configure http server
 	server := &http.Server{
@@ -112,7 +119,10 @@ func run(logger *slog.Logger) error {
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		_ = server.Close()
+		if closeErr := server.Close(); closeErr != nil {
+			return fmt.Errorf("force shutdown failed: %w", closeErr)
+		}
+
 		return fmt.Errorf("shutdown HTTP server: %w", err)
 	}
 
