@@ -1,0 +1,114 @@
+
+name: ScopeGuard API CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit Tests & Code Quality
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "Unformatted Go files:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run unit tests with race detector
+        run: go test -race ./...
+
+      - name: Build API
+        run: go build -o /tmp/scopeguard-api ./cmd/api
+
+  database:
+    name: PostgreSQL & Migration Tests
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    env:
+      TEST_DATABASE_URL: postgres://scopeguard:scopeguard_ci@127.0.0.1:5432/scopeguard_test?sslmode=disable
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: scopeguard
+          POSTGRES_PASSWORD: scopeguard_ci
+          POSTGRES_DB: scopeguard_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scopeguard -d scopeguard_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: apps/api/go.mod
+          cache-dependency-path: apps/api/go.sum
+
+      - name: Install Goose
+        run: |
+          go install github.com/pressly/goose/v3/cmd/goose@v3.27.3
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Validate migrations
+        run: |
+          goose -dir ./migrations postgres \
+            "$TEST_DATABASE_URL" validate
+
+      - name: Apply migrations
+        run: |
+          goose -dir ./migrations postgres \
+            "$TEST_DATABASE_URL" up
+
+      - name: Run integration tests
+        run: go test -tags=integration ./tests/integration/... -v
+
+      - name: Test migration rollback
+        run: |
+          goose -dir ./migrations postgres \
+            "$TEST_DATABASE_URL" down
+
+          goose -dir ./migrations postgres \
+            "$TEST_DATABASE_URL" up

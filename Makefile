@@ -2,7 +2,7 @@
 .PHONY: help db-up db-down db-status db-logs db-shell \
         migrate-create migrate-up migrate-down \
         migrate-status migrate-version migrate-validate \
-        api-run test vet
+        api-run test vet fmt-check test-race test-integration build
 
 help:
 	@echo "ScopeGuard Development Commands"
@@ -71,3 +71,24 @@ test:
 
 vet:
 	cd apps/api && go vet ./...
+
+fmt-check:
+	cd apps/api && test -z "$$(gofmt -l .)"
+
+test-race:
+	cd apps/api && go test -race ./...
+
+test-integration:
+	cd apps/api && go test -tags=integration ./tests/integration/... -v
+
+build:
+	cd apps/api && go build ./cmd/api
+
+migrate-test-up:
+	cd apps/api && goose -env=.env.test up
+
+migrate-test-down:
+	cd apps/api && goose -env=.env.test down
+
+migrate-test-status:
+	cd apps/api && goose -env=.env.test status

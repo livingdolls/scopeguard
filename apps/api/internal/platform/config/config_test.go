@@ -5,7 +5,7 @@ import "testing"
 func TestLoadConfig(t *testing.T) {
 	t.Setenv("HTTP_ADDR", ":9090")
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("DB_MAX_CONNS", "10")
+	t.Setenv("DB_MAX_CONNECTIONS", "10")
 
 	cfg, err := Load()
 	if err != nil {
@@ -32,10 +32,10 @@ func TestLoadConfigMissingDatabaseURL(t *testing.T) {
 
 func TestLoadConfigInvalidMaxConns(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/test")
-	t.Setenv("DB_MAX_CONNS", "-5")
+	t.Setenv("DB_MAX_CONNECTIONS", "-5")
 
 	_, err := Load()
 	if err == nil {
-		t.Fatal("expected error for invalid DB_MAX_CONNS")
+		t.Fatal("expected error for invalid DB_MAX_CONNECTIONS")
 	}
 }

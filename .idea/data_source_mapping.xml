@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourcePerFileMappings">
+    <file url="file://$PROJECT_DIR$/apps/api/tests/integration/database_test.go" value="93539c41-422e-4791-90f0-8c91baf45414" />
+  </component>
+</project>
