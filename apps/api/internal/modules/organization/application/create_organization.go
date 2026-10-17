@@ -11,8 +11,9 @@ import (
 
 // Application input model
 type CreateOrganizationInput struct {
-	Name string
-	Slug string
+	Name        string
+	Slug        string
+	OwnerUserID uuid.UUID
 }
 
 // Application output model
@@ -47,6 +48,10 @@ func (s CreateOrganizationService) Execute(ctx context.Context, input CreateOrga
 		return CreateOrganizationOutput{}, err
 	}
 
+	if input.OwnerUserID == uuid.Nil {
+		return CreateOrganizationOutput{}, ErrInvalidOwnerUserID
+	}
+
 	// generate ID and timestamp
 	id := uuid.New()
 	now := time.Now()
@@ -64,7 +69,7 @@ func (s CreateOrganizationService) Execute(ctx context.Context, input CreateOrga
 	}
 
 	// persist through outbound port
-	if err := s.repository.Create(ctx, org); err != nil {
+	if err := s.repository.CreateWithOwner(ctx, org, input.OwnerUserID); err != nil {
 		return CreateOrganizationOutput{}, fmt.Errorf("persist organization: %w", err)
 	}
 

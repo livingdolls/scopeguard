@@ -11,14 +11,16 @@ import (
 )
 
 type fakeOrganizationRepository struct {
-	created *domain.Organization
-	err     error
-	calls   int
+	created     *domain.Organization
+	ownerUserID uuid.UUID
+	err         error
+	calls       int
 }
 
-func (f *fakeOrganizationRepository) Create(
+func (f *fakeOrganizationRepository) CreateWithOwner(
 	ctx context.Context,
 	org *domain.Organization,
+	ownerUserID uuid.UUID,
 ) error {
 	f.calls++
 
@@ -27,18 +29,21 @@ func (f *fakeOrganizationRepository) Create(
 	}
 
 	f.created = org
+	f.ownerUserID = ownerUserID
 	return nil
 }
 
 func TestCreateOrganizationSuccess(t *testing.T) {
+	ownerUserID := uuid.New()
 	repo := &fakeOrganizationRepository{}
 	service := NewCreateOrganizationService(repo)
 
 	result, err := service.Execute(
 		context.Background(),
 		CreateOrganizationInput{
-			Name: "  Acme Corporation  ",
-			Slug: "acme-corp",
+			Name:        "  Acme Corporation  ",
+			Slug:        "acme-corp",
+			OwnerUserID: ownerUserID,
 		},
 	)
 
@@ -52,6 +57,10 @@ func TestCreateOrganizationSuccess(t *testing.T) {
 
 	if repo.created == nil {
 		t.Fatal("organization was not persisted")
+	}
+
+	if repo.ownerUserID != ownerUserID {
+		t.Errorf("expected owner user ID %s, got %s", ownerUserID, repo.ownerUserID)
 	}
 
 	if result.ID == uuid.Nil {
@@ -86,18 +95,29 @@ func TestCreateOrganizationValidationError(t *testing.T) {
 		wantErr error
 	}{
 		{
+			name: "invalid owner user ID",
+			input: CreateOrganizationInput{
+				Name:        "Acme",
+				Slug:        "acme",
+				OwnerUserID: uuid.Nil,
+			},
+			wantErr: ErrInvalidOwnerUserID,
+		},
+		{
 			name: "empty name",
 			input: CreateOrganizationInput{
-				Name: "",
-				Slug: "acme",
+				Name:        "",
+				Slug:        "acme",
+				OwnerUserID: uuid.New(),
 			},
 			wantErr: domain.ErrInvalidOrganizationName,
 		},
 		{
 			name: "invalid slug",
 			input: CreateOrganizationInput{
-				Name: "Acme",
-				Slug: "INVALID_SLUG",
+				Name:        "Acme",
+				Slug:        "INVALID_SLUG",
+				OwnerUserID: uuid.New(),
 			},
 			wantErr: domain.ErrInvalidOrganizationSlug,
 		},
@@ -108,7 +128,7 @@ func TestCreateOrganizationValidationError(t *testing.T) {
 			repo := &fakeOrganizationRepository{}
 			service := NewCreateOrganizationService(repo)
 
-			_, err := service.Execute(
+			result, err := service.Execute(
 				context.Background(),
 				tt.input,
 			)
@@ -123,6 +143,10 @@ func TestCreateOrganizationValidationError(t *testing.T) {
 
 			if repo.calls != 0 {
 				t.Fatal("repository must not be called")
+			}
+
+			if result != (CreateOrganizationOutput{}) {
+				t.Errorf("expected empty output, got %+v", result)
 			}
 		})
 	}
@@ -141,6 +165,10 @@ func TestCreateOrganizationRepositoryError(t *testing.T) {
 			name: "duplicate slug",
 			err:  ErrOrganizationSlugAlreadyExists,
 		},
+		{
+			name: "owner user not found",
+			err:  ErrOwnerUserNotFound,
+		},
 	}
 
 	for _, tt := range tests {
@@ -150,11 +178,12 @@ func TestCreateOrganizationRepositoryError(t *testing.T) {
 			}
 			service := NewCreateOrganizationService(repo)
 
-			_, err := service.Execute(
+			result, err := service.Execute(
 				context.Background(),
 				CreateOrganizationInput{
-					Name: "Acme",
-					Slug: "acme",
+					Name:        "Acme",
+					Slug:        "acme",
+					OwnerUserID: uuid.New(),
 				},
 			)
 
@@ -164,6 +193,14 @@ func TestCreateOrganizationRepositoryError(t *testing.T) {
 					tt.err,
 					err,
 				)
+			}
+
+			if repo.calls != 1 {
+				t.Fatalf("expected 1 repository call, got %d", repo.calls)
+			}
+
+			if result != (CreateOrganizationOutput{}) {
+				t.Errorf("expected empty output, got %+v", result)
 			}
 		})
 	}
@@ -176,16 +213,46 @@ func TestCreateOrganizationCanceledContext(t *testing.T) {
 	repo := &fakeOrganizationRepository{}
 	service := NewCreateOrganizationService(repo)
 
-	_, err := service.Execute(
+	result, err := service.Execute(
 		ctx,
 		CreateOrganizationInput{
-			Name: "Acme",
-			Slug: "acme",
+			Name:        "Acme",
+			Slug:        "acme",
+			OwnerUserID: uuid.New(),
 		},
 	)
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context canceled, got %v", err)
+	}
+
+	if repo.calls != 0 {
+		t.Fatal("repository must not be called")
+	}
+
+	if result != (CreateOrganizationOutput{}) {
+		t.Errorf("expected empty output, got %+v", result)
+	}
+}
+
+func TestCreateOrganizationInvalidOwner(t *testing.T) {
+	repo := &fakeOrganizationRepository{}
+	service := NewCreateOrganizationService(repo)
+
+	_, err := service.Execute(
+		context.Background(),
+		CreateOrganizationInput{
+			Name:        "Acme",
+			Slug:        "acme",
+			OwnerUserID: uuid.Nil,
+		},
+	)
+
+	if !errors.Is(err, ErrInvalidOwnerUserID) {
+		t.Fatalf(
+			"expected invalid owner ID, got %v",
+			err,
+		)
 	}
 
 	if repo.calls != 0 {
