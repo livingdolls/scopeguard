@@ -27,14 +27,9 @@ func NewUser(id uuid.UUID, email string, now time.Time) (*User, error) {
 		return nil, ErrInvalidUserID
 	}
 
-	email = strings.ToLower(strings.TrimSpace(email))
-	if len(email) == 0 || len(email) > 320 {
-		return nil, ErrInvalidEmail
-	}
-
-	address, err := mail.ParseAddress(email)
-	if err != nil || address.Address != email || address.Name != "" {
-		return nil, ErrInvalidEmail
+	email, err := NormalizeEmail(email)
+	if err != nil {
+		return nil, err
 	}
 
 	if now.IsZero() {
@@ -49,6 +44,20 @@ func NewUser(id uuid.UUID, email string, now time.Time) (*User, error) {
 		createdAt: now,
 		updatedAt: now,
 	}, nil
+}
+
+func NormalizeEmail(raw string) (string, error) {
+	email := strings.ToLower(strings.TrimSpace(raw))
+	if len(email) == 0 || len(email) > 320 {
+		return "", ErrInvalidEmail
+	}
+
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email || address.Name != "" {
+		return "", ErrInvalidEmail
+	}
+
+	return email, nil
 }
 
 func (u *User) ID() uuid.UUID {
