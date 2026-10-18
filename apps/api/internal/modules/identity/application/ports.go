@@ -38,3 +38,8 @@ type AccessTokenVerifier interface {
 type UserAccessChecker interface {
 	CanAuthenticate(ctx context.Context, userID uuid.UUID) (bool, error)
 }
+
+type EmailVerificationRepository interface {
+	StorePending(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
+	ConsumeAndActivate(ctx context.Context, tokenHash []byte) error
+}

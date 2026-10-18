@@ -94,18 +94,22 @@ func TestLoginUserIntegration(t *testing.T) {
 		t.Fatalf("pending account must not log in: %v", err)
 	}
 
-	// Simulate verified user for this integration test.
-	_, err = pool.Exec(
+	issuer := application.NewIssueEmailVerificationService(repo)
+	verifier := application.NewVerifyEmailService(repo)
+
+	verificationToken, err := issuer.Execute(
 		ctx,
-		`UPDATE users
-         SET status = 'active',
-             email_verified_at = NOW()
-         WHERE id = $1`,
 		registered.ID,
 	)
-
 	if err != nil {
-		t.Fatalf("activate test account: %v", err)
+		t.Fatalf("issue verification token: %v", err)
+	}
+
+	if err := verifier.Execute(
+		ctx,
+		verificationToken,
+	); err != nil {
+		t.Fatalf("verify email: %v", err)
 	}
 
 	result, err := loginService.Execute(
