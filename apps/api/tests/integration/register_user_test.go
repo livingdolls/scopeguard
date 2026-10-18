@@ -104,6 +104,25 @@ func TestRegisterUserPersistence(t *testing.T) {
 		t.Fatalf("unexpected stored email: %s", storedEmail)
 	}
 
+	var status string
+	var verifiedAt *time.Time
+
+	err = pool.QueryRow(
+		ctx,
+		`SELECT status, email_verified_at
+         FROM users
+         WHERE id = $1`,
+		output.ID,
+	).Scan(&status, &verifiedAt)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if status != "pending_verification" || verifiedAt != nil {
+		t.Fatal("new user must start unverified")
+	}
+
 	if storedHash == password {
 		t.Fatal("plaintext password was stored")
 	}

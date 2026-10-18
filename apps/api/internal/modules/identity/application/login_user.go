@@ -86,6 +86,15 @@ func (l LoginUserService) Execute(ctx context.Context, input LoginUserInput) (Lo
 		return LoginUserOutput{}, ErrInvalidCredentials
 	}
 
+	// periksa status user
+	if !credentials.Status.CanAuthenticate() {
+		return LoginUserOutput{}, ErrInvalidCredentials
+	}
+
+	if err := ctx.Err(); err != nil {
+		return LoginUserOutput{}, err
+	}
+
 	token, expiresAt, err := l.tokens.Issue(credentials.UserID)
 	if err != nil {
 		return LoginUserOutput{}, fmt.Errorf("issue access token: %w", err)

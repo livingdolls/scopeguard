@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/domain"
 )
 
 type loginRepoStub struct {
@@ -70,6 +71,7 @@ func TestLoginUserSuccess(t *testing.T) {
 		credential: LoginCredential{
 			UserID:       userID,
 			PasswordHash: "stored-test-hash",
+			Status:       domain.AccountActive,
 		},
 	}
 	hasher := &loginHasherStub{}
@@ -115,6 +117,7 @@ func TestLoginUserInvalidPassword(t *testing.T) {
 		credential: LoginCredential{
 			UserID:       uuid.New(),
 			PasswordHash: "stored-test-hash",
+			Status:       domain.AccountActive,
 		},
 	}
 
@@ -142,6 +145,55 @@ func TestLoginUserInvalidPassword(t *testing.T) {
 
 	if tokens.calls != 0 {
 		t.Fatal("token must not be issued")
+	}
+}
+
+func TestLoginUserInactiveAccount(t *testing.T) {
+	statuses := []domain.AccountStatus{
+		domain.AccountPendingVerification,
+		domain.AccountSuspended,
+	}
+
+	for _, status := range statuses {
+		t.Run(string(status), func(t *testing.T) {
+			repo := &loginRepoStub{
+				credential: LoginCredential{
+					UserID:       uuid.New(),
+					PasswordHash: "stored-test-hash",
+					Status:       status,
+				},
+			}
+
+			hasher := &loginHasherStub{}
+			tokens := &loginTokenStub{}
+
+			service, err := NewLoginUserService(
+				repo, hasher, tokens, "dummy-test-hash",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = service.Execute(
+				context.Background(),
+				LoginUserInput{
+					Email:    "user@example.com",
+					Password: "correct horse battery staple",
+				},
+			)
+
+			if !errors.Is(err, ErrInvalidCredentials) {
+				t.Fatalf("expected invalid credentials, got %v", err)
+			}
+
+			if hasher.calls != 1 {
+				t.Fatal("password must be verified")
+			}
+
+			if tokens.calls != 0 {
+				t.Fatal("inactive account must not receive JWT")
+			}
+		})
 	}
 }
 

@@ -81,6 +81,33 @@ func TestLoginUserIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Unverified account must not receive an access token.
+	_, err = loginService.Execute(
+		ctx,
+		application.LoginUserInput{
+			Email:    registered.Email,
+			Password: password,
+		},
+	)
+
+	if !errors.Is(err, application.ErrInvalidCredentials) {
+		t.Fatalf("pending account must not log in: %v", err)
+	}
+
+	// Simulate verified user for this integration test.
+	_, err = pool.Exec(
+		ctx,
+		`UPDATE users
+         SET status = 'active',
+             email_verified_at = NOW()
+         WHERE id = $1`,
+		registered.ID,
+	)
+
+	if err != nil {
+		t.Fatalf("activate test account: %v", err)
+	}
+
 	result, err := loginService.Execute(
 		ctx,
 		application.LoginUserInput{
@@ -113,5 +140,28 @@ func TestLoginUserIntegration(t *testing.T) {
 
 	if !errors.Is(err, application.ErrInvalidCredentials) {
 		t.Fatalf("expected invalid credentials, got %v", err)
+	}
+
+	_, err = pool.Exec(
+		ctx,
+		`UPDATE users
+         SET status = 'suspended'
+         WHERE id = $1`,
+		registered.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowed, err := repo.CanAuthenticate(
+		ctx,
+		registered.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if allowed {
+		t.Fatal("suspended user must be denied access")
 	}
 }

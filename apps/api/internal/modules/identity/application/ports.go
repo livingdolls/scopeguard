@@ -20,6 +20,7 @@ type RegistrationRepository interface {
 type LoginCredential struct {
 	UserID       uuid.UUID
 	PasswordHash string
+	Status       domain.AccountStatus
 }
 
 type LoginRepository interface {
@@ -34,6 +35,6 @@ type AccessTokenVerifier interface {
 	Verify(token string) (uuid.UUID, error)
 }
 
-type UserExistenceChecker interface {
-	Exists(ctx context.Context, userID uuid.UUID) (bool, error)
+type UserAccessChecker interface {
+	CanAuthenticate(ctx context.Context, userID uuid.UUID) (bool, error)
 }

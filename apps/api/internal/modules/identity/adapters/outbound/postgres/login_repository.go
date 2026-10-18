@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
+	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/domain"
 )
 
 var _ application.LoginRepository = (*UserRepository)(nil)
@@ -15,7 +16,8 @@ func (u *UserRepository) FindByEmail(ctx context.Context, email string) (applica
 	const query = `
 		SELECT
 			u.id,
-			c.password_hash
+			c.password_hash,
+			u.status
 		FROM users u 
 		INNER JOIN user_password_credentials c 
 			ON c.user_id = u.id
@@ -23,6 +25,7 @@ func (u *UserRepository) FindByEmail(ctx context.Context, email string) (applica
 	`
 
 	var credential application.LoginCredential
+	var status string
 
 	err := u.pool.QueryRow(
 		ctx,
@@ -31,6 +34,7 @@ func (u *UserRepository) FindByEmail(ctx context.Context, email string) (applica
 	).Scan(
 		&credential.UserID,
 		&credential.PasswordHash,
+		&status,
 	)
 
 	if err != nil {
@@ -40,6 +44,8 @@ func (u *UserRepository) FindByEmail(ctx context.Context, email string) (applica
 
 		return application.LoginCredential{}, fmt.Errorf("query login: %w", err)
 	}
+
+	credential.Status = domain.AccountStatus(status)
 
 	return credential, nil
 }

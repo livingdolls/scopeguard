@@ -18,6 +18,7 @@ var (
 type User struct {
 	id        uuid.UUID
 	email     string
+	status    AccountStatus
 	createdAt time.Time
 	updatedAt time.Time
 }
@@ -41,6 +42,7 @@ func NewUser(id uuid.UUID, email string, now time.Time) (*User, error) {
 	return &User{
 		id:        id,
 		email:     email,
+		status:    AccountPendingVerification,
 		createdAt: now,
 		updatedAt: now,
 	}, nil
@@ -74,4 +76,8 @@ func (u *User) CreatedAt() time.Time {
 
 func (u *User) UpdatedAt() time.Time {
 	return u.updatedAt
+}
+
+func (u *User) Status() AccountStatus {
+	return u.status
 }

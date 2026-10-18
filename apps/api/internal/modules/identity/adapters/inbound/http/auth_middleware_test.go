@@ -34,24 +34,24 @@ func (s *stubTokenVerifier) Verify(
 }
 
 type stubUserChecker struct {
-	exists bool
-	err    error
-	calls  int
+	allowed bool
+	err     error
+	calls   int
 }
 
-func (s *stubUserChecker) Exists(
+func (s *stubUserChecker) CanAuthenticate(
 	ctx context.Context,
 	id uuid.UUID,
 ) (bool, error) {
 	s.calls++
-	return s.exists, s.err
+	return s.allowed, s.err
 }
 
 func TestRequireBearerAuth(t *testing.T) {
 	tests := []struct {
 		name      string
 		headers   []string
-		exists    bool
+		allowed   bool
 		checkErr  error
 		want      int
 		wantCalls int
@@ -59,7 +59,7 @@ func TestRequireBearerAuth(t *testing.T) {
 		{
 			name:      "valid token",
 			headers:   []string{"Bearer valid-test-token"},
-			exists:    true,
+			allowed:   true,
 			want:      http.StatusOK,
 			wantCalls: 1,
 		},
@@ -85,7 +85,21 @@ func TestRequireBearerAuth(t *testing.T) {
 		{
 			name:      "user deleted",
 			headers:   []string{"Bearer valid-test-token"},
-			exists:    false,
+			allowed:   false,
+			want:      http.StatusUnauthorized,
+			wantCalls: 1,
+		},
+		{
+			name:      "pending verification",
+			headers:   []string{"Bearer valid-test-token"},
+			allowed:   false,
+			want:      http.StatusUnauthorized,
+			wantCalls: 1,
+		},
+		{
+			name:      "suspended account",
+			headers:   []string{"Bearer valid-test-token"},
+			allowed:   false,
 			want:      http.StatusUnauthorized,
 			wantCalls: 1,
 		},
@@ -114,8 +128,8 @@ func TestRequireBearerAuth(t *testing.T) {
 				userID: userID,
 			}
 			checker := &stubUserChecker{
-				exists: tt.exists,
-				err:    tt.checkErr,
+				allowed: tt.allowed,
+				err:     tt.checkErr,
 			}
 
 			logger := slog.New(

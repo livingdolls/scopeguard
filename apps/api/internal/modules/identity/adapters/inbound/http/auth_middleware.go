@@ -13,7 +13,7 @@ import (
 
 func RequireBearerAuth(
 	verifier application.AccessTokenVerifier,
-	users application.UserExistenceChecker,
+	users application.UserAccessChecker,
 	logger *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		headers := c.Request.Header.Values("Authorization")
@@ -42,8 +42,8 @@ func RequireBearerAuth(
 			return
 		}
 
-		// ensure the token subject still exists
-		exists, err := users.Exists(c.Request.Context(), userID)
+		// ensure the user is active
+		allowed, err := users.CanAuthenticate(c.Request.Context(), userID)
 		if err != nil {
 			logger.Error("authentication user lookup failed", "error", err)
 
@@ -55,7 +55,7 @@ func RequireBearerAuth(
 			return
 		}
 
-		if !exists {
+		if !allowed {
 			rejectUnauthorized(c)
 			return
 		}

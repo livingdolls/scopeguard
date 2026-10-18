@@ -40,8 +40,8 @@ func (u UserRepository) CreateWithPassword(ctx context.Context, user *domain.Use
 	}()
 
 	const insertUsr = `
-		INSERT INTO users (id, email, created_at, updated_at)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO users (id, email, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5)
 	`
 
 	_, err = tx.Exec(
@@ -49,6 +49,7 @@ func (u UserRepository) CreateWithPassword(ctx context.Context, user *domain.Use
 		insertUsr,
 		user.ID(),
 		user.Email(),
+		string(user.Status()),
 		user.CreatedAt(),
 		user.UpdatedAt(),
 	)

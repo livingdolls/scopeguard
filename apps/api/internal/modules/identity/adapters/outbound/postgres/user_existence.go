@@ -8,14 +8,16 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 )
 
-var _ application.UserExistenceChecker = (*UserRepository)(nil)
+var _ application.UserAccessChecker = (*UserRepository)(nil)
 
-func (r *UserRepository) Exists(ctx context.Context, userID uuid.UUID) (bool, error) {
+func (r *UserRepository) CanAuthenticate(ctx context.Context, userID uuid.UUID) (bool, error) {
 	const query = `
 		SELECT EXISTS (
 			SELECT 1
 			FROM users
 			WHERE id = $1
+				AND status = 'active'
+				AND email_verified_at IS NOT NULL
 		)
 	`
 
