@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/domain"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/authctx"
 )
 
 const maxRequestBodySize = 16 << 10 // 16kb
@@ -27,6 +28,16 @@ func NewHandler(createOrganization application.CreateOrganization, logger *slog.
 }
 
 func (h *Handler) CreateOrganization(c *gin.Context) {
+	ownerID, authenticated := authctx.UserIDFromContext(c.Request.Context())
+
+	if !authenticated {
+		c.JSON(http.StatusUnauthorized, errorResponse{
+			Error: "authentication required",
+		})
+
+		return
+	}
+
 	// accept JSON request only
 	if c.ContentType() != "application/json" {
 		c.JSON(
@@ -62,8 +73,9 @@ func (h *Handler) CreateOrganization(c *gin.Context) {
 
 	// map http request to application input
 	input := application.CreateOrganizationInput{
-		Name: request.Name,
-		Slug: request.Slug,
+		Name:        request.Name,
+		Slug:        request.Slug,
+		OwnerUserID: ownerID,
 	}
 
 	// execute application use case
@@ -101,11 +113,10 @@ func (h *Handler) writeApplicationError(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid organization name"})
 	case errors.Is(err, domain.ErrInvalidOrganizationSlug):
 		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid organization slug"})
-	case errors.Is(err, domain.ErrInvalidOrganizationSlug):
-		c.JSON(http.StatusBadRequest, errorResponse{Error: "invalid organization slug"})
 	case errors.Is(err, application.ErrOrganizationSlugAlreadyExists):
 		c.JSON(http.StatusConflict, errorResponse{Error: "organization already exists"})
-
+	case errors.Is(err, application.ErrOwnerUserNotFound), errors.Is(err, application.ErrInvalidOwnerUserID):
+		c.JSON(http.StatusUnauthorized, errorResponse{Error: "authentication required"})
 	default:
 		h.logger.Error("create organization failed", "error", err)
 		c.JSON(http.StatusInternalServerError, errorResponse{Error: "internal server error"})

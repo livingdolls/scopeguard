@@ -17,6 +17,11 @@ import (
 
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/domain"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/authctx"
+)
+
+var testOwnerID = uuid.MustParse(
+	"11111111-1111-4111-8111-111111111111",
 )
 
 type stubCreateOrganization struct {
@@ -47,9 +52,19 @@ func newTestRouter(
 
 	handler := NewHandler(service, logger)
 
-	// Test-only route group.
-	// Production requires authentication and authorization.
 	group := router.Group("/v1")
+
+	// Test-only authenticated identity.
+	group.Use(func(c *gin.Context) {
+		ctx := authctx.WithUserID(
+			c.Request.Context(),
+			testOwnerID,
+		)
+
+		c.Request = c.Request.WithContext(ctx)
+		c.Next()
+	})
+
 	handler.RegisterRoutes(group)
 
 	return router
@@ -121,6 +136,10 @@ func TestCreateOrganizationSuccess(t *testing.T) {
 		t.Error("incorrect slug passed to use case")
 	}
 
+	if service.received.OwnerUserID != testOwnerID {
+		t.Fatal("incorrect authenticated owner ID")
+	}
+
 	var result organizationResponse
 
 	if err := json.Unmarshal(
@@ -144,6 +163,38 @@ func TestCreateOrganizationSuccess(t *testing.T) {
 
 	if !result.CreatedAt.Equal(now) {
 		t.Error("incorrect created_at")
+	}
+}
+
+func TestCreateOrganizationRequiresAuthentication(t *testing.T) {
+	service := &stubCreateOrganization{}
+
+	logger := slog.New(
+		slog.NewTextHandler(io.Discard, nil),
+	)
+
+	handler := NewHandler(service, logger)
+	router := gin.New()
+
+	// Intentionally do not install auth middleware.
+	group := router.Group("/v1")
+	handler.RegisterRoutes(group)
+
+	response := performCreateRequest(
+		router,
+		`{"name":"Acme","slug":"acme"}`,
+		"application/json",
+	)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf(
+			"expected HTTP 401, got %d",
+			response.Code,
+		)
+	}
+
+	if service.calls != 0 {
+		t.Fatal("unauthenticated request invoked use case")
 	}
 }
 

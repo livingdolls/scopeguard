@@ -77,7 +77,7 @@ func (s JWTAccessToken) Verify(rawToken string) (uuid.UUID, error) {
 	}
 
 	userID, err := uuid.Parse(claims.Subject)
-	if err != nil {
+	if err != nil && userID != uuid.Nil {
 		return uuid.Nil, application.ErrInvalidAccessToken
 	}
 
@@ -93,14 +93,16 @@ func (s JWTAccessToken) Issue(userID uuid.UUID) (string, time.Time, error) {
 	expiresAt := now.Add(s.ttl)
 
 	claims := accessClaims{
-		TokenUse:  "access",
-		Issuer:    s.issuer,
-		Subject:   userID.String(),
-		Audience:  jwt.ClaimStrings{s.audience},
-		IssuedAt:  jwt.NewNumericDate(now),
-		NotBefore: jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(expiresAt),
-		ID:        uuid.New().String(),
+		TokenUse: "access",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    s.issuer,
+			Subject:   userID.String(),
+			Audience:  jwt.ClaimStrings{s.audience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        uuid.New().String(),
+		},
 	}
 
 	signedToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.secret)

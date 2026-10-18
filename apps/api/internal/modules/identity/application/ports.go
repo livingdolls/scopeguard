@@ -33,3 +33,7 @@ type AccessTokenIssuer interface {
 type AccessTokenVerifier interface {
 	Verify(token string) (uuid.UUID, error)
 }
+
+type UserExistenceChecker interface {
+	Exists(ctx context.Context, userID uuid.UUID) (bool, error)
+}
