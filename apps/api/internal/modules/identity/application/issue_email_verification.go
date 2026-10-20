@@ -15,45 +15,41 @@ const verificationTokenTTL = 24 * time.Hour
 const verificationTokenBytes = 32
 
 type IssueEmailVerificationService struct {
-	repository EmailVerificationRepository
+	outbox EmailVerificationOutbox
 }
 
-func NewIssueEmailVerificationService(repository EmailVerificationRepository) *IssueEmailVerificationService {
+func NewIssueEmailVerificationService(outbox EmailVerificationOutbox) *IssueEmailVerificationService {
 	return &IssueEmailVerificationService{
-		repository: repository,
+		outbox: outbox,
 	}
 }
 
 // Execute returns a secret token for trusted internal
 // delivery only. never expose it through a public api
-func (s *IssueEmailVerificationService) Execute(ctx context.Context, userID uuid.UUID) (string, error) {
+func (s *IssueEmailVerificationService) Execute(ctx context.Context, userID uuid.UUID) (uuid.UUID, error) {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return uuid.Nil, err
 	}
 
 	if userID == uuid.Nil {
-		return "", ErrVerificationNotAllowed
+		return uuid.Nil, ErrVerificationNotAllowed
 	}
 
-	// generate a cryptography secure token
 	raw := make([]byte, verificationTokenBytes)
 
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("failed to generate verification token: %w", err)
+		return uuid.Nil, fmt.Errorf("failed to generate verification token: %w", err)
 	}
 
-	// hash the token before persistence
+	rawToken := base64.RawURLEncoding.EncodeToString(raw)
 	digest := sha256.Sum256(raw)
 
+	eventID := uuid.New()
 	expiresAt := time.Now().UTC().Add(verificationTokenTTL)
 
-	// persist the hash
-	if err := s.repository.StorePending(ctx, userID, digest[:], expiresAt); err != nil {
-		return "", fmt.Errorf("failed to store verification token: %w", err)
+	if err := s.outbox.Enqueue(ctx, eventID, userID, rawToken, digest[:], expiresAt); err != nil {
+		return uuid.Nil, fmt.Errorf("queue verification email: %w", err)
 	}
 
-	// encode for delivery through a trusted channel
-	token := base64.RawURLEncoding.EncodeToString(raw)
-
-	return token, nil
+	return eventID, nil
 }

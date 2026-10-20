@@ -13,17 +13,21 @@ import (
 )
 
 type verificationRepositoryStub struct {
-	storedHash   []byte
+	eventID      uuid.UUID
 	ownerID      uuid.UUID
+	rawToken     string
+	storedHash   []byte
 	expiresAt    time.Time
 	storeCalls   int
 	consumeCalls int
 	err          error
 }
 
-func (f *verificationRepositoryStub) StorePending(
+func (f *verificationRepositoryStub) Enqueue(
 	ctx context.Context,
+	eventID uuid.UUID,
 	userID uuid.UUID,
+	rawToken string,
 	tokenHash []byte,
 	expiresAt time.Time,
 ) error {
@@ -33,9 +37,12 @@ func (f *verificationRepositoryStub) StorePending(
 		return f.err
 	}
 
+	f.eventID = eventID
 	f.ownerID = userID
+	f.rawToken = rawToken
 	f.storedHash = bytes.Clone(tokenHash)
 	f.expiresAt = expiresAt
+
 	return nil
 }
 
@@ -62,7 +69,7 @@ func TestIssueEmailVerification(t *testing.T) {
 
 	ownerID := uuid.New()
 
-	token, err := service.Execute(
+	eventID, err := service.Execute(
 		context.Background(),
 		ownerID,
 	)
@@ -70,7 +77,9 @@ func TestIssueEmailVerification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	raw, err := base64.RawURLEncoding.DecodeString(token)
+	raw, err := base64.RawURLEncoding.DecodeString(
+		repo.rawToken,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +91,11 @@ func TestIssueEmailVerification(t *testing.T) {
 	digest := sha256.Sum256(raw)
 
 	if !bytes.Equal(repo.storedHash, digest[:]) {
-		t.Fatal("repository must receive token hash")
+		t.Fatal("repository received incorrect token hash")
+	}
+
+	if repo.eventID != eventID || eventID == uuid.Nil {
+		t.Fatal("unexpected outbox event ID")
 	}
 
 	if repo.ownerID != ownerID {
@@ -102,14 +115,42 @@ func TestIssueEmailVerificationInvalidOwner(t *testing.T) {
 	repo := &verificationRepositoryStub{}
 	service := NewIssueEmailVerificationService(repo)
 
-	_, err := service.Execute(context.Background(), uuid.Nil)
+	eventID, err := service.Execute(context.Background(), uuid.Nil)
 
 	if !errors.Is(err, ErrVerificationNotAllowed) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	if eventID != uuid.Nil {
+		t.Fatal("invalid owner must not receive an event ID")
+	}
+
 	if repo.storeCalls != 0 {
 		t.Fatal("repository must not be called")
+	}
+}
+
+func TestIssueEmailVerificationEnqueueFailure(t *testing.T) {
+	repo := &verificationRepositoryStub{
+		err: errors.New("outbox unavailable"),
+	}
+	service := NewIssueEmailVerificationService(repo)
+
+	eventID, err := service.Execute(
+		context.Background(),
+		uuid.New(),
+	)
+
+	if !errors.Is(err, repo.err) {
+		t.Fatalf("expected outbox error, got %v", err)
+	}
+
+	if eventID != uuid.Nil {
+		t.Fatal("failed issuance must not return an event ID")
+	}
+
+	if repo.storeCalls != 1 {
+		t.Fatal("expected one outbox call")
 	}
 }
 
@@ -119,7 +160,7 @@ func TestVerifyEmail(t *testing.T) {
 	issuer := NewIssueEmailVerificationService(repo)
 	verifier := NewVerifyEmailService(repo)
 
-	token, err := issuer.Execute(
+	_, err := issuer.Execute(
 		context.Background(),
 		uuid.New(),
 	)
@@ -129,7 +170,7 @@ func TestVerifyEmail(t *testing.T) {
 
 	if err := verifier.Execute(
 		context.Background(),
-		token,
+		repo.rawToken,
 	); err != nil {
 		t.Fatal(err)
 	}

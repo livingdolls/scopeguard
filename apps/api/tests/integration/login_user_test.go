@@ -94,16 +94,23 @@ func TestLoginUserIntegration(t *testing.T) {
 		t.Fatalf("pending account must not log in: %v", err)
 	}
 
-	issuer := application.NewIssueEmailVerificationService(repo)
+	outboxRepo, sealer := newVerificationOutboxForTest(
+		t, pool,
+	)
+	issuer := application.NewIssueEmailVerificationService(outboxRepo)
 	verifier := application.NewVerifyEmailService(repo)
 
-	verificationToken, err := issuer.Execute(
+	eventID, err := issuer.Execute(
 		ctx,
 		registered.ID,
 	)
 	if err != nil {
 		t.Fatalf("issue verification token: %v", err)
 	}
+
+	verificationToken := readOutboxToken(
+		t, pool, sealer, eventID,
+	)
 
 	if err := verifier.Execute(
 		ctx,

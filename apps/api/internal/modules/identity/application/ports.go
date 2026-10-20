@@ -40,6 +40,17 @@ type UserAccessChecker interface {
 }
 
 type EmailVerificationRepository interface {
-	StorePending(ctx context.Context, userID uuid.UUID, tokenHash []byte, expiresAt time.Time) error
 	ConsumeAndActivate(ctx context.Context, tokenHash []byte) error
+}
+type EmailVerificationOutbox interface {
+	Enqueue(ctx context.Context, eventID uuid.UUID, userID uuid.UUID, rawToken string, tokenHash []byte, expiresAt time.Time) error
+}
+
+type EncryptedEmailPayload struct {
+	KeyID string
+	Data  []byte
+}
+
+type EmailPayloadSealer interface {
+	Seal(eventID uuid.UUID, email string, token string) (EncryptedEmailPayload, error)
 }

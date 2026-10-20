@@ -58,18 +58,29 @@ func TestEmailVerificationLifecycle(t *testing.T) {
 	)
 	defer cancel()
 
-	issuer := application.NewIssueEmailVerificationService(repo)
+	outboxRepo, sealer := newVerificationOutboxForTest(
+		t, pool,
+	)
+	issuer := application.NewIssueEmailVerificationService(outboxRepo)
 	verifier := application.NewVerifyEmailService(repo)
 
-	firstToken, err := issuer.Execute(ctx, userID)
+	firstEventID, err := issuer.Execute(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	secondToken, err := issuer.Execute(ctx, userID)
+	firstToken := readOutboxToken(
+		t, pool, sealer, firstEventID,
+	)
+
+	secondEventID, err := issuer.Execute(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	secondToken := readOutboxToken(
+		t, pool, sealer, secondEventID,
+	)
 
 	if firstToken == secondToken {
 		t.Fatal("tokens must be unique")
@@ -151,13 +162,20 @@ func TestEmailVerificationExpired(t *testing.T) {
 	)
 	defer cancel()
 
-	issuer := application.NewIssueEmailVerificationService(repo)
+	outboxRepo, sealer := newVerificationOutboxForTest(
+		t, pool,
+	)
+	issuer := application.NewIssueEmailVerificationService(outboxRepo)
 	verifier := application.NewVerifyEmailService(repo)
 
-	token, err := issuer.Execute(ctx, userID)
+	eventID, err := issuer.Execute(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	token := readOutboxToken(
+		t, pool, sealer, eventID,
+	)
 
 	// Simulate an expired token without sleeping.
 	_, err = pool.Exec(
@@ -199,7 +217,7 @@ func TestEmailVerificationExpired(t *testing.T) {
 }
 
 func TestEmailVerificationConcurrentUse(t *testing.T) {
-	_, repo, userID := setupVerificationUser(t)
+	pool, repo, userID := setupVerificationUser(t)
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
@@ -207,13 +225,20 @@ func TestEmailVerificationConcurrentUse(t *testing.T) {
 	)
 	defer cancel()
 
-	issuer := application.NewIssueEmailVerificationService(repo)
+	outboxRepo, sealer := newVerificationOutboxForTest(
+		t, pool,
+	)
+	issuer := application.NewIssueEmailVerificationService(outboxRepo)
 	verifier := application.NewVerifyEmailService(repo)
 
-	token, err := issuer.Execute(ctx, userID)
+	eventID, err := issuer.Execute(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	token := readOutboxToken(
+		t, pool, sealer, eventID,
+	)
 
 	start := make(chan struct{})
 	results := make(chan error, 2)
