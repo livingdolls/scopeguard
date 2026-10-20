@@ -27,14 +27,16 @@ type RegisterUser interface {
 type RegisterUserService struct {
 	repository RegistrationRepository
 	hasher     PasswordHasher
+	sealer     EmailPayloadSealer
 }
 
 var _ RegisterUser = (*RegisterUserService)(nil)
 
-func NewRegisterUserService(repository RegistrationRepository, hasher PasswordHasher) *RegisterUserService {
+func NewRegisterUserService(repository RegistrationRepository, hasher PasswordHasher, sealer EmailPayloadSealer) *RegisterUserService {
 	return &RegisterUserService{
 		repository: repository,
 		hasher:     hasher,
+		sealer:     sealer,
 	}
 }
 
@@ -60,11 +62,36 @@ func (r RegisterUserService) Execute(ctx context.Context, input RegisterUserInpu
 		return RegisterUserOutput{}, fmt.Errorf("hash registration password: %w", err)
 	}
 
+	//generate verification token
+	verification, err := generateVerificationToken(now)
+	if err != nil {
+		return RegisterUserOutput{}, err
+	}
+
+	// create IDs
+	eventID := uuid.New()
+	verificationID := uuid.New()
+
+	encrypted, err := r.sealer.Seal(eventID, user.Email(), verification.Raw)
+	if err != nil {
+		return RegisterUserOutput{}, fmt.Errorf("seal event: %w", err)
+	}
+
 	if err := ctx.Err(); err != nil {
 		return RegisterUserOutput{}, err
 	}
 
-	if err := r.repository.CreateWithPassword(ctx, user, passwordHash); err != nil {
+	record := RegistrationRecord{
+		User:             user,
+		PasswordHash:     passwordHash,
+		VerificationID:   verificationID,
+		TokenHash:        verification.Hash,
+		TokenExpiresAt:   verification.ExpiresAt,
+		OutboxID:         eventID,
+		EncryptedPayload: encrypted,
+	}
+
+	if err := r.repository.RegisterWithVerification(ctx, record); err != nil {
 		return RegisterUserOutput{}, fmt.Errorf("register user: %w", err)
 	}
 

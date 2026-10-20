@@ -8,13 +8,25 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/domain"
 )
 
+type RegistrationRecord struct {
+	User         *domain.User
+	PasswordHash string
+
+	VerificationID uuid.UUID
+	TokenHash      []byte
+	TokenExpiresAt time.Time
+
+	OutboxID         uuid.UUID
+	EncryptedPayload EncryptedEmailPayload
+}
+
 type PasswordHasher interface {
 	Hash(plainPassword string) (string, error)
 	Verify(plainPassword string, encodeHash string) (bool, error)
 }
 
 type RegistrationRepository interface {
-	CreateWithPassword(ctx context.Context, user *domain.User, passwordHash string) error
+	RegisterWithVerification(ctx context.Context, record RegistrationRecord) error
 }
 
 type LoginCredential struct {

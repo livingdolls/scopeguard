@@ -2,17 +2,11 @@ package application
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
-
-const verificationTokenTTL = 24 * time.Hour
-const verificationTokenBytes = 32
 
 type IssueEmailVerificationService struct {
 	outbox EmailVerificationOutbox
@@ -35,19 +29,15 @@ func (s *IssueEmailVerificationService) Execute(ctx context.Context, userID uuid
 		return uuid.Nil, ErrVerificationNotAllowed
 	}
 
-	raw := make([]byte, verificationTokenBytes)
+	generated, err := generateVerificationToken(time.Now().UTC())
 
-	if _, err := rand.Read(raw); err != nil {
-		return uuid.Nil, fmt.Errorf("failed to generate verification token: %w", err)
+	if err != nil {
+		return uuid.Nil, err
 	}
 
-	rawToken := base64.RawURLEncoding.EncodeToString(raw)
-	digest := sha256.Sum256(raw)
-
 	eventID := uuid.New()
-	expiresAt := time.Now().UTC().Add(verificationTokenTTL)
 
-	if err := s.outbox.Enqueue(ctx, eventID, userID, rawToken, digest[:], expiresAt); err != nil {
+	if err := s.outbox.Enqueue(ctx, eventID, userID, generated.Raw, generated.Hash, generated.ExpiresAt); err != nil {
 		return uuid.Nil, fmt.Errorf("queue verification email: %w", err)
 	}
 

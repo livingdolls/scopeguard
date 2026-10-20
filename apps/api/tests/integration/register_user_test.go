@@ -4,6 +4,7 @@ package integration
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	encryptionadapter "github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/adapters/outbound/encryption"
 	passwordadapter "github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/adapters/outbound/password"
 	identitypostgres "github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/adapters/outbound/postgres"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
@@ -20,17 +22,59 @@ import (
 
 func newRegistrationService(
 	t *testing.T,
-) (*pgxpool.Pool, *application.RegisterUserService) {
+) (
+	*pgxpool.Pool,
+	*application.RegisterUserService,
+	*encryptionadapter.AESGCM,
+) {
 	t.Helper()
 
 	pool := openTestDB(t)
 
+	_, sealer := newVerificationOutboxForTest(t, pool)
+
 	repository := identitypostgres.NewUserRepository(pool)
 	hasher := passwordadapter.NewArgon2idHasher()
 
-	return pool, application.NewRegisterUserService(
-		repository, hasher,
+	service := application.NewRegisterUserService(
+		repository, hasher, sealer,
 	)
+
+	return pool, service, sealer
+}
+
+func registrationOutboxID(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	userID uuid.UUID,
+) uuid.UUID {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	var eventID uuid.UUID
+
+	err := pool.QueryRow(
+		ctx,
+		`SELECT o.id
+         FROM email_outbox o
+         JOIN email_verification_tokens v
+           ON v.id = o.verification_token_id
+         WHERE v.user_id = $1
+         ORDER BY v.created_at, o.id
+         LIMIT 1`,
+		userID,
+	).Scan(&eventID)
+
+	if err != nil {
+		t.Fatalf("find registration outbox: %v", err)
+	}
+
+	return eventID
 }
 
 func cleanupRegisteredUser(
@@ -59,7 +103,7 @@ func cleanupRegisteredUser(
 }
 
 func TestRegisterUserPersistence(t *testing.T) {
-	pool, service := newRegistrationService(t)
+	pool, service, sealer := newRegistrationService(t)
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
@@ -137,10 +181,29 @@ func TestRegisterUserPersistence(t *testing.T) {
 	if !matched {
 		t.Fatal("stored password does not match")
 	}
+
+	eventID := registrationOutboxID(t, pool, output.ID)
+	rawToken := readOutboxToken(t, pool, sealer, eventID)
+
+	repo := identitypostgres.NewUserRepository(pool)
+	verifier := application.NewVerifyEmailService(repo)
+
+	if err := verifier.Execute(ctx, rawToken); err != nil {
+		t.Fatalf("verify registered user: %v", err)
+	}
+
+	allowed, err := repo.CanAuthenticate(ctx, output.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !allowed {
+		t.Fatal("verified registered user must be active")
+	}
 }
 
 func TestRegisterUserDuplicateEmail(t *testing.T) {
-	pool, service := newRegistrationService(t)
+	pool, service, _ := newRegistrationService(t)
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
@@ -215,8 +278,30 @@ func TestRegisterUserRollbackOnCredentialFailure(
 		t.Fatal(err)
 	}
 
+	eventID := uuid.New()
+	rawToken := "test-verification-token"
+	digest := sha256.Sum256([]byte(rawToken))
+
+	_, sealer := newVerificationOutboxForTest(t, pool)
+
+	encrypted, err := sealer.Seal(eventID, user.Email(), rawToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// Intentionally violate password_hash CHECK constraint.
-	err = repository.CreateWithPassword(ctx, user, "")
+	err = repository.RegisterWithVerification(
+		ctx,
+		application.RegistrationRecord{
+			User:             user,
+			PasswordHash:     "",
+			VerificationID:   uuid.New(),
+			TokenHash:        digest[:],
+			TokenExpiresAt:   time.Now().Add(24 * time.Hour),
+			OutboxID:         eventID,
+			EncryptedPayload: encrypted,
+		},
+	)
 
 	var pgErr *pgconn.PgError
 
@@ -252,8 +337,67 @@ func TestRegisterUserRollbackOnCredentialFailure(
 	}
 }
 
+func TestRegisterUserRollbackWhenOutboxFails(t *testing.T) {
+	pool := openTestDB(t)
+
+	repo := identitypostgres.NewUserRepository(pool)
+	hasher := passwordadapter.NewArgon2idHasher()
+
+	// This sealer returns an empty encryption key ID.
+	service := application.NewRegisterUserService(
+		repo,
+		hasher,
+		invalidOutboxSealer{},
+	)
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		20*time.Second,
+	)
+	defer cancel()
+
+	email := "rollback-outbox-" + uuid.NewString() + "@example.test"
+
+	_, err := service.Execute(
+		ctx,
+		application.RegisterUserInput{
+			Email:    email,
+			Password: "correct horse battery staple",
+		},
+	)
+
+	if err == nil {
+		t.Fatal("expected registration failure")
+	}
+
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23514" ||
+		pgErr.ConstraintName != "email_outbox_key_not_blank" {
+		t.Fatalf("expected outbox key constraint failure, got %v", err)
+	}
+
+	// The last INSERT failed. The first three must have rolled back.
+	var userCount int
+
+	err = pool.QueryRow(
+		ctx,
+		`SELECT COUNT(*)
+         FROM users
+         WHERE email = $1`,
+		email,
+	).Scan(&userCount)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if userCount != 0 {
+		t.Fatalf("registration left %d orphan users", userCount)
+	}
+}
+
 func TestRegisterUserConcurrentDuplicateEmail(t *testing.T) {
-	pool, service := newRegistrationService(t)
+	pool, service, _ := newRegistrationService(t)
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(),

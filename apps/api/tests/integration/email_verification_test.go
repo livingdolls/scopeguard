@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	passwordadapter "github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/adapters/outbound/password"
 	identitypostgres "github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/adapters/outbound/postgres"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 )
@@ -23,30 +22,32 @@ func setupVerificationUser(
 
 	pool := openTestDB(t)
 	repo := identitypostgres.NewUserRepository(pool)
-	hasher := passwordadapter.NewArgon2idHasher()
 
-	register := application.NewRegisterUserService(repo, hasher)
+	userID := uuid.New()
+	email := "verify-" + uuid.NewString() + "@example.test"
 
 	ctx, cancel := context.WithTimeout(
 		context.Background(),
-		15*time.Second,
+		10*time.Second,
 	)
 	defer cancel()
 
-	result, err := register.Execute(
+	_, err := pool.Exec(
 		ctx,
-		application.RegisterUserInput{
-			Email:    "verify-" + uuid.NewString() + "@example.test",
-			Password: "correct horse battery staple",
-		},
+		`INSERT INTO users (
+            id, email, status
+         )
+         VALUES ($1, $2, 'pending_verification')`,
+		userID,
+		email,
 	)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create pending test user: %v", err)
 	}
 
-	cleanupRegisteredUser(t, pool, result.ID)
+	cleanupRegisteredUser(t, pool, userID)
 
-	return pool, repo, result.ID
+	return pool, repo, userID
 }
 
 func TestEmailVerificationLifecycle(t *testing.T) {

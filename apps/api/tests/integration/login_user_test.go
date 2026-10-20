@@ -23,8 +23,10 @@ func TestLoginUserIntegration(t *testing.T) {
 	repo := identitypostgres.NewUserRepository(pool)
 	hasher := passwordadapter.NewArgon2idHasher()
 
+	_, sealer := newVerificationOutboxForTest(t, pool)
+
 	registerService := application.NewRegisterUserService(
-		repo, hasher,
+		repo, hasher, sealer,
 	)
 
 	ctx, cancel := context.WithTimeout(
@@ -94,29 +96,19 @@ func TestLoginUserIntegration(t *testing.T) {
 		t.Fatalf("pending account must not log in: %v", err)
 	}
 
-	outboxRepo, sealer := newVerificationOutboxForTest(
-		t, pool,
-	)
-	issuer := application.NewIssueEmailVerificationService(outboxRepo)
-	verifier := application.NewVerifyEmailService(repo)
-
-	eventID, err := issuer.Execute(
-		ctx,
-		registered.ID,
-	)
-	if err != nil {
-		t.Fatalf("issue verification token: %v", err)
-	}
+	eventID := registrationOutboxID(t, pool, registered.ID)
 
 	verificationToken := readOutboxToken(
 		t, pool, sealer, eventID,
 	)
 
+	verifier := application.NewVerifyEmailService(repo)
+
 	if err := verifier.Execute(
 		ctx,
 		verificationToken,
 	); err != nil {
-		t.Fatalf("verify email: %v", err)
+		t.Fatalf("verify registration email: %v", err)
 	}
 
 	result, err := loginService.Execute(
