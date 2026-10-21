@@ -12,10 +12,7 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 )
 
-type VerificationEmail struct {
-	To    string `json:"to"`
-	Token string `json:"token"`
-}
+type VerificationEmail application.VerificationEmail
 
 type AESGCM struct {
 	aead  cipher.AEAD
