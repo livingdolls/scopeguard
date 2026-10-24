@@ -66,7 +66,7 @@ func (w *EmailWorker) ProcessOne(ctx context.Context) (bool, error) {
 	}
 
 	if !allowed {
-		return true, w.jobs.MarkDead(ctx, job)
+		return true, w.jobs.MarkDead(finishCtx, job)
 	}
 
 	message, err := w.opener.Open(

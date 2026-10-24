@@ -26,7 +26,7 @@ func NewEmailOutboxJobRepository(pool *pgxpool.Pool) *EmailOutboxJobRepository {
 	}
 }
 
-func (e EmailOutboxJobRepository) Claim(ctx context.Context, lease time.Duration, maxAttempts int) (application.EmailOutboxJob, bool, error) {
+func (e *EmailOutboxJobRepository) Claim(ctx context.Context, lease time.Duration, maxAttempts int) (application.EmailOutboxJob, bool, error) {
 	if lease < time.Second || maxAttempts < 1 {
 		return application.EmailOutboxJob{}, false, errors.New("invalid claim configuration")
 	}

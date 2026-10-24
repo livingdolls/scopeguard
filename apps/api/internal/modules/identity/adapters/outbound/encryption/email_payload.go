@@ -12,7 +12,7 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 )
 
-type VerificationEmail application.VerificationEmail
+type VerificationEmail = application.VerificationEmail
 
 type AESGCM struct {
 	aead  cipher.AEAD
@@ -20,6 +20,7 @@ type AESGCM struct {
 }
 
 var _ application.EmailPayloadSealer = (*AESGCM)(nil)
+var _ application.EmailPayloadOpener = (*AESGCM)(nil)
 
 func NewAESGCM(key []byte, keyID string) (*AESGCM, error) {
 	if len(key) != 32 {
