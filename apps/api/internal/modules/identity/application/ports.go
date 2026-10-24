@@ -20,6 +20,15 @@ type RegistrationRecord struct {
 	EncryptedPayload EncryptedEmailPayload
 }
 
+type UserProfile struct {
+	ID    uuid.UUID
+	Email string
+}
+
+type UserProfileReader interface {
+	FindProfileByID(ctx context.Context, userID uuid.UUID) (UserProfile, error)
+}
+
 type PasswordHasher interface {
 	Hash(plainPassword string) (string, error)
 	Verify(plainPassword string, encodeHash string) (bool, error)

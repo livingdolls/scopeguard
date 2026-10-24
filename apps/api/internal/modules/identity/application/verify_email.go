@@ -7,9 +7,15 @@ import (
 	"fmt"
 )
 
+type VerifyEmail interface {
+	Execute(ctx context.Context, token string) error
+}
+
 type VerifyEmailService struct {
 	repository EmailVerificationRepository
 }
+
+var _ VerifyEmail = (*VerifyEmailService)(nil)
 
 func NewVerifyEmailService(repository EmailVerificationRepository) *VerifyEmailService {
 	return &VerifyEmailService{
