@@ -15,6 +15,7 @@ import (
 
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/authctx"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/ratelimit"
 )
 
 type registerStub struct {
@@ -79,6 +80,20 @@ func (s *profileStub) Execute(
 	return s.output, s.err
 }
 
+type allowAllLimiter struct{}
+
+func (allowAllLimiter) Allow(
+	ctx context.Context,
+	scope string,
+	identity string,
+	limit int,
+	window time.Duration,
+) (ratelimit.Decision, error) {
+	return ratelimit.Decision{
+		Allowed: true,
+	}, nil
+}
+
 func newAuthTestRouter(
 	register *registerStub,
 	verify *verifyStub,
@@ -92,7 +107,7 @@ func newAuthTestRouter(
 	)
 
 	handler := NewHandler(
-		register, verify, login, profile, logger,
+		register, verify, login, profile, allowAllLimiter{}, logger,
 	)
 
 	router := gin.New()

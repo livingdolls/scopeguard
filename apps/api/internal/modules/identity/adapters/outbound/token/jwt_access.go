@@ -77,7 +77,7 @@ func (s JWTAccessToken) Verify(rawToken string) (uuid.UUID, error) {
 	}
 
 	userID, err := uuid.Parse(claims.Subject)
-	if err != nil && userID != uuid.Nil {
+	if err != nil || userID == uuid.Nil {
 		return uuid.Nil, application.ErrInvalidAccessToken
 	}
 

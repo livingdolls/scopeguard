@@ -11,27 +11,30 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/domain"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/authctx"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/ratelimit"
 )
 
 type Handler struct {
-	register application.RegisterUser
-	verify   application.VerifyEmail
-	login    application.LoginUser
-	profile  application.GetCurrentUser
-	logger   *slog.Logger
+	register     application.RegisterUser
+	verify       application.VerifyEmail
+	login        application.LoginUser
+	profile      application.GetCurrentUser
+	loginLimiter ratelimit.Limiter
+	logger       *slog.Logger
 }
 
-func NewHandler(register application.RegisterUser, verify application.VerifyEmail, login application.LoginUser, profile application.GetCurrentUser, logger *slog.Logger) *Handler {
+func NewHandler(register application.RegisterUser, verify application.VerifyEmail, login application.LoginUser, profile application.GetCurrentUser, loginLimiter ratelimit.Limiter, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &Handler{
-		register: register,
-		verify:   verify,
-		login:    login,
-		profile:  profile,
-		logger:   logger,
+		register:     register,
+		verify:       verify,
+		login:        login,
+		profile:      profile,
+		loginLimiter: loginLimiter,
+		logger:       logger,
 	}
 }
 
@@ -148,6 +151,33 @@ func (h *Handler) Login(c *gin.Context) {
 	if err := decodeStrictJSON(c, &request); err != nil {
 		writeJSONDecoderError(c, err)
 		return
+	}
+
+	if h.loginLimiter == nil {
+		ratelimit.Unavailable(c)
+		return
+	}
+
+	email, normalizeErr := domain.NormalizeEmail(request.Email)
+
+	if normalizeErr == nil {
+		decision, err := h.loginLimiter.Allow(
+			c.Request.Context(),
+			"auth:login:email",
+			email,
+			5,
+			5*time.Minute,
+		)
+
+		if err != nil {
+			ratelimit.Unavailable(c)
+			return
+		}
+
+		if !decision.Allowed {
+			ratelimit.Reject(c, decision)
+			return
+		}
 	}
 
 	output, err := h.login.Execute(c.Request.Context(), application.LoginUserInput{

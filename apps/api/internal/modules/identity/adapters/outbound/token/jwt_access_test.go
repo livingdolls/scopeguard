@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/identity/application"
@@ -47,6 +48,52 @@ func TestJWTAccessTokenIssueAndVerify(t *testing.T) {
 
 	if verifiedID != userID {
 		t.Fatal("verified user ID differs from original")
+	}
+}
+
+func TestJWTAccessTokenRejectsInvalidSubject(t *testing.T) {
+	service := newTestTokenService(t)
+	now := time.Date(2026, 10, 17, 9, 0, 0, 0, time.UTC)
+	service.now = func() time.Time {
+		return now
+	}
+
+	tests := []struct {
+		name    string
+		subject string
+	}{
+		{name: "malformed subject", subject: "not-a-uuid"},
+		{name: "empty subject", subject: ""},
+		{name: "nil UUID", subject: uuid.Nil.String()},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := accessClaims{
+				TokenUse: "access",
+				RegisteredClaims: jwt.RegisteredClaims{
+					Issuer:    service.issuer,
+					Subject:   tt.subject,
+					Audience:  jwt.ClaimStrings{service.audience},
+					IssuedAt:  jwt.NewNumericDate(now),
+					NotBefore: jwt.NewNumericDate(now),
+					ExpiresAt: jwt.NewNumericDate(now.Add(service.ttl)),
+					ID:        uuid.New().String(),
+				},
+			}
+			raw, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(service.secret)
+			if err != nil {
+				t.Fatalf("sign token: %v", err)
+			}
+
+			userID, err := service.Verify(raw)
+			if !errors.Is(err, application.ErrInvalidAccessToken) {
+				t.Fatalf("expected invalid subject rejection, got %v", err)
+			}
+			if userID != uuid.Nil {
+				t.Fatalf("expected nil user ID, got %s", userID)
+			}
+		})
 	}
 }
 
