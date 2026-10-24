@@ -49,6 +49,9 @@ func (o OrganizationRepository) CreateWithOwner(ctx context.Context, org *domain
 		_ = tx.Rollback(rollbackCtx)
 	}()
 
+	ownerRoleID := uuid.New()
+	memberRoleID := uuid.New()
+
 	// insert organization
 	const query = `
 		INSERT INTO organizations (
@@ -80,25 +83,58 @@ func (o OrganizationRepository) CreateWithOwner(ctx context.Context, org *domain
 		return fmt.Errorf("insert organization: %w", err)
 	}
 
+	const insertDefaultRoles = `
+		INSERT INTO roles (
+		    id,
+		    organization_id,
+		    name,
+		    slug,
+		    is_system,
+		    created_at,
+		    updated_at
+		)
+		VALUES
+			($1, $2, 'Owner', 'owner', TRUE, $4, $5),
+			($3, $2, 'Member', 'member', TRUE, $4, $5)
+	`
+
+	_, err = tx.Exec(
+		ctx,
+		insertDefaultRoles,
+		ownerRoleID,
+		org.ID(),
+		memberRoleID,
+		org.CreatedAt(),
+		org.UpdatedAt(),
+	)
+
+	if err != nil {
+		return fmt.Errorf("insert organization default roles: %w", err)
+	}
+
 	// insert owner membership on the same tx
 	const insertOwnerMembership = `
 		INSERT INTO organization_memberships (
-		                                       organization_id,
-		                                       user_id,
-		                                       role,
-		                                       created_at,
-		                                       updated_at
-		                                       ) VALUES ($1, $2, 'owner', $3, $4)
+			organization_id,
+		    user_id,
+		    role,
+		    created_at,
+		    updated_at
+		)
+		VALUES ($1, $2, 'owner', $3, $4)
+		RETURNING id
 		`
 
-	_, err = tx.Exec(
+	var ownerMembershipID uuid.UUID
+
+	err = tx.QueryRow(
 		ctx,
 		insertOwnerMembership,
 		org.ID().String(),
 		ownerUserID.String(),
 		org.CreatedAt(),
 		org.UpdatedAt(),
-	)
+	).Scan(&ownerMembershipID)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -110,7 +146,24 @@ func (o OrganizationRepository) CreateWithOwner(ctx context.Context, org *domain
 		return fmt.Errorf("insert owner membership: %w", err)
 	}
 
-	// commit only after both succeed
+	const insertOwnerAssignment = `
+		INSERT INTO membership_roles (organization_id, membership_id, role_id)
+		VALUES ($1, $2, $3)
+	`
+
+	_, err = tx.Exec(
+		ctx,
+		insertOwnerAssignment,
+		org.ID(),
+		ownerMembershipID,
+		ownerRoleID,
+	)
+
+	if err != nil {
+		return fmt.Errorf("assign owner system role: %w", err)
+	}
+
+	// Commit the organization, system roles, and owner assignment together.
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit organization transaction: %w", err)
 	}
