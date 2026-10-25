@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	authorizationdomain "github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/domain"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/application"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/domain"
 )
@@ -110,6 +111,59 @@ func (o OrganizationRepository) CreateWithOwner(ctx context.Context, org *domain
 
 	if err != nil {
 		return fmt.Errorf("insert organization default roles: %w", err)
+	}
+
+	const insertRolePermissions = `
+		INSERT INTO role_permissions (
+		    organization_id,
+		    role_id,
+		    permission_code
+		)
+		SELECT 
+		    $1,
+		    $2,
+		    p.code
+		FROM permissions AS p 
+		WHERE p.code = ANY($3::text[])
+	`
+
+	defaultRoles := []struct {
+		id   uuid.UUID
+		slug string
+	}{
+		{
+			id:   ownerRoleID,
+			slug: authorizationdomain.RoleOwner,
+		},
+		{
+			id:   memberRoleID,
+			slug: authorizationdomain.RoleMember,
+		},
+	}
+
+	for _, defaultRole := range defaultRoles {
+		permissionCode := authorizationdomain.DefaultSystemRolePermissions(defaultRole.slug)
+
+		if len(permissionCode) == 0 {
+			return fmt.Errorf("no default permission for role %s", defaultRole.slug)
+		}
+
+		result, err := tx.Exec(
+			ctx,
+			insertRolePermissions,
+			org.ID(),
+			defaultRole.id,
+			permissionCode,
+		)
+
+		if err != nil {
+			return fmt.Errorf("assign permission to %s role: %w", defaultRole.slug, err)
+		}
+
+		if result.RowsAffected() != int64(len(permissionCode)) {
+			return fmt.Errorf("incomplete default permissions for %s: "+
+				"expected %d, got %d", defaultRole.slug, len(permissionCode), result.RowsAffected())
+		}
 	}
 
 	// insert owner membership on the same tx
