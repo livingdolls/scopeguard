@@ -2,15 +2,11 @@ package postgres
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/application"
-	"github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/domain"
 )
 
 type RolePermissionRepository struct {
@@ -24,157 +20,22 @@ func NewRolePermissionRepository(pool *pgxpool.Pool) *RolePermissionRepository {
 }
 
 func (r *RolePermissionRepository) Grant(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, roleID uuid.UUID, permissionCode string) (bool, error) {
-	tx, err := r.pool.Begin(ctx)
+	tx, rollback, err := beginRolePermissionTx(ctx, r.pool)
 	if err != nil {
-		return false, fmt.Errorf("begin permission transaction: %w", err)
+		return false, err
 	}
 
-	defer func() {
-		rollbackCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	defer rollback()
 
-		if err := tx.Rollback(rollbackCtx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			fmt.Printf("rollback permission transaction: %v\n", err)
-		}
-	}()
-
-	// lock organization before all authorization check
-	var lockedOrganizationID uuid.UUID
-
-	err = tx.QueryRow(
+	if err := authorizeRolePermissionMutation(
 		ctx,
-		`SELECT id FROM organizations WHERE id = $1`,
-		organizationID,
-	).Scan(&lockedOrganizationID)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, application.ErrRoleOrganizationNotFound
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("lock organization: %w", err)
-	}
-
-	var membershipID uuid.UUID
-
-	err = tx.QueryRow(
-		ctx,
-		`
-		SELECT m.id
-		FROM organization_memberships m 
-		JOIN users u 
-			ON u.id = m.user_id
-		WHERE m.organization_id = $1
-		AND m.user_id = $2
-		AND u.status = 'active'
-		AND u.email_verified_at IS NOT NULL
-		FOR SHARE of m, u
-		`,
-		organizationID,
+		tx,
 		actorUserID,
-	).Scan(&membershipID)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, application.ErrPermissionAssignmentForbidden
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("check actor membership: %w", err)
-	}
-
-	const actorPermissionQuery = `
-		SELECT
-			COALESCE(
-				BOOL_OR(rp.permission_code = $3),
-				FALSE
-			) AS can_manage_roles,
-		    
-		    COALESCE(
-		    	BOOL_OR(rp.permission_code = $4),
-			    FALSE
-		    ) AS can_delegate_permissions
-		FROM membership_roles mr
-		JOIN role_permissions rp 
-			ON rp.organization_id = mr.organization_id
-		AND rp.role_id = mr.role_id
-		WHERE mr.organization_id = $1
-			AND mr.membership_id = $2
-	`
-
-	var canManageRoles bool
-	var canDelegate bool
-
-	err = tx.QueryRow(
-		ctx,
-		actorPermissionQuery,
-		organizationID,
-		membershipID,
-		domain.PermissionRoleUpdate,
-		permissionCode,
-	).Scan(&canManageRoles, &canDelegate)
-
-	if err != nil {
-		return false, fmt.Errorf("check actor permission: %w", err)
-	}
-
-	if !canManageRoles {
-		return false, application.ErrPermissionAssignmentForbidden
-	}
-
-	//verify that the target role is actually in this tenant.
-	var isSystem bool
-
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT is_system
-			FROM roles
-			WHERE organization_id = $1
-				AND id = $2
-			FOR UPDATE
-		`,
 		organizationID,
 		roleID,
-	).Scan(&isSystem)
-
-	if errors.Is(err, pgx.ErrNoRows) {
-		return false, application.ErrTargetRoleNotFound
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("load target role: %w", err)
-	}
-
-	if isSystem {
-		return false, application.ErrSystemRoleImmutable
-	}
-
-	var permissionExists bool
-
-	err = tx.QueryRow(
-		ctx,
-		`
-			SELECT EXISTS (
-			SELECT 1
-			FROM permissions
-			WHERE code = $1
-		)
-		`,
-
 		permissionCode,
-	).Scan(&permissionExists)
-
-	if err != nil {
-		return false, fmt.Errorf("check permission catalog: %w", err)
-	}
-
-	if !permissionExists {
-		return false, application.ErrTargetRoleNotFound
-	}
-
-	//actor cannot delegate a permission they do not have
-	if !canDelegate {
-		return false, application.ErrPermissionAssignmentForbidden
+	); err != nil {
+		return false, err
 	}
 
 	result, err := tx.Exec(
@@ -210,4 +71,50 @@ func (r *RolePermissionRepository) Grant(ctx context.Context, actorUserID uuid.U
 	return added, nil
 }
 
+func (r *RolePermissionRepository) Revoke(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, roleID uuid.UUID, permissionCode string) (bool, error) {
+	tx, rollback, err := beginRolePermissionTx(ctx, r.pool)
+	if err != nil {
+		return false, err
+	}
+
+	defer rollback()
+
+	if err := authorizeRolePermissionMutation(
+		ctx,
+		tx,
+		actorUserID,
+		organizationID,
+		roleID,
+		permissionCode,
+	); err != nil {
+		return false, err
+	}
+
+	result, err := tx.Exec(
+		ctx,
+		`
+			DELETE FROM role_permissions
+			WHERE organization_id = $1
+			AND role_id = $2
+			AND permission_code = $3
+		`,
+		organizationID,
+		roleID,
+		permissionCode,
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("delete role permission: %w", err)
+	}
+
+	removed := result.RowsAffected() == 1
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit role permission revoke: %w", err)
+	}
+
+	return removed, nil
+}
+
 var _ application.RolePermissionRepository = (*RolePermissionRepository)(nil)
+var _ application.RolePermissionRevoker = (*RolePermissionRepository)(nil)
