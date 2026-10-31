@@ -20,7 +20,7 @@ func NewRolePermissionRepository(pool *pgxpool.Pool) *RolePermissionRepository {
 }
 
 func (r *RolePermissionRepository) Grant(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, roleID uuid.UUID, permissionCode string) (bool, error) {
-	tx, rollback, err := beginRolePermissionTx(ctx, r.pool)
+	tx, rollback, err := beginAuthorizationTx(ctx, r.pool)
 	if err != nil {
 		return false, err
 	}
@@ -72,7 +72,7 @@ func (r *RolePermissionRepository) Grant(ctx context.Context, actorUserID uuid.U
 }
 
 func (r *RolePermissionRepository) Revoke(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, roleID uuid.UUID, permissionCode string) (bool, error) {
-	tx, rollback, err := beginRolePermissionTx(ctx, r.pool)
+	tx, rollback, err := beginAuthorizationTx(ctx, r.pool)
 	if err != nil {
 		return false, err
 	}

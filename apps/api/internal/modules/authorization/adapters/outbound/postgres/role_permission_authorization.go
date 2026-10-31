@@ -14,7 +14,7 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/domain"
 )
 
-func beginRolePermissionTx(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, func(), error) {
+func beginAuthorizationTx(ctx context.Context, pool *pgxpool.Pool) (pgx.Tx, func(), error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("begin role permission tx: %w", err)

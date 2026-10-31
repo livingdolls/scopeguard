@@ -18,3 +18,7 @@ type RolePermissionRepository interface {
 type RolePermissionRevoker interface {
 	Revoke(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, roleID uuid.UUID, permissionCode string) (removed bool, err error)
 }
+
+type MembershipRoleRepository interface {
+	Assign(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, membershipID uuid.UUID, roleID uuid.UUID) (assigned bool, err error)
+}

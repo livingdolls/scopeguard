@@ -9,4 +9,6 @@ var (
 	ErrTargetRoleNotFound            = errors.New("target role not found")
 	ErrSystemRoleImmutable           = errors.New("system role permissions cannot be modified")
 	ErrPermissionNotFound            = errors.New("permission not found")
+	ErrMembershipNotFound            = errors.New("membership not found in organizations")
+	ErrOwnerRoleAssignmentForbidden  = errors.New("owner role requires a dedicated ownership workflow")
 )
