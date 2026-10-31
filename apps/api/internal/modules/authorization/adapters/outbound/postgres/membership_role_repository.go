@@ -30,7 +30,7 @@ func (m *MembershipRoleRepository) Assign(ctx context.Context, actorUserID uuid.
 	defer rollback()
 
 	// every RBAC mutations takes the tenant lock first
-	var tentantID uuid.UUID
+	var tenantID uuid.UUID
 
 	err = tx.QueryRow(
 		ctx,
@@ -41,7 +41,7 @@ func (m *MembershipRoleRepository) Assign(ctx context.Context, actorUserID uuid.
 		FOR UPDATE
 		`,
 		organizationID,
-	).Scan(&tentantID)
+	).Scan(&tenantID)
 
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, application.ErrRoleOrganizationNotFound
