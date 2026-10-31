@@ -17,6 +17,7 @@ type MembershipRoleRepository struct {
 }
 
 var _ application.MembershipRoleRepository = (*MembershipRoleRepository)(nil)
+var _ application.MembershipRoleRemover = (*MembershipRoleRepository)(nil)
 
 func NewMembershipRoleRepository(pool *pgxpool.Pool) *MembershipRoleRepository {
 	return &MembershipRoleRepository{pool: pool}
@@ -222,4 +223,236 @@ func (m *MembershipRoleRepository) Assign(ctx context.Context, actorUserID uuid.
 	}
 
 	return isAssigned, nil
+}
+
+func (m *MembershipRoleRepository) Remove(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, membershipID uuid.UUID, roleID uuid.UUID) (removed bool, err error) {
+	tx, rollback, err := beginAuthorizationTx(ctx, m.pool)
+	if err != nil {
+		return false, err
+	}
+	defer rollback()
+
+	// lock tenant before reading or changing RBAC state
+	var tenantID uuid.UUID
+
+	err = tx.QueryRow(
+		ctx,
+		`
+			SELECT id
+			FROM organizations
+			WHERE id = $1
+			FOR UPDATE
+		`,
+		organizationID,
+	).Scan(&tenantID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, application.ErrRoleOrganizationNotFound
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("lock organization: %w", err)
+	}
+
+	// validate actor & permission
+	var actorMembershipID uuid.UUID
+
+	err = tx.QueryRow(
+		ctx,
+		`
+			SELECT m.id
+			FROM organization_memberships m
+			JOIN users u ON u.id = m.user_id
+			WHERE m.organization_id = $1
+				AND m.user_id = $2
+				AND u.status = 'active'
+				AND u.email_verified_at IS NOT NULL
+			FOR SHARE OF m, u
+		`,
+		organizationID,
+		actorUserID,
+	).Scan(&actorMembershipID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, application.ErrPermissionAssignmentForbidden
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("check actor membership: %w", err)
+	}
+
+	var canRemoveRoles bool
+
+	err = tx.QueryRow(
+		ctx,
+		`
+		SELECT EXISTS (
+			SELECT 1
+			FROM membership_roles mr
+			JOIN role_permissions rp 
+				ON rp.organization_id = mr.organization_id
+				AND rp.role_id = mr.role_id
+			WHERE mr.organization_id = $1
+				AND mr.membership_id = $2
+				AND rp.permission_code = $3
+		)
+		`,
+		organizationID,
+		actorMembershipID,
+		domain.PermissionMemberRoleAssign,
+	).Scan(&canRemoveRoles)
+
+	if err != nil {
+		return false, fmt.Errorf("check member role assignment permissions: %w", err)
+	}
+
+	if !canRemoveRoles {
+		return false, application.ErrPermissionAssignmentForbidden
+	}
+
+	var targetRoleSlug string
+
+	err = tx.QueryRow(
+		ctx,
+		`
+			SELECT slug
+			FROM roles
+			WHERE organization_id = $1
+			AND id = $2
+			FOR SHARE
+		`,
+		organizationID,
+		roleID,
+	).Scan(&targetRoleSlug)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, application.ErrTargetRoleNotFound
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("load target role slug: %w", err)
+	}
+
+	// owner assignment cannot be removed by this workflow
+	if targetRoleSlug == domain.RoleOwner {
+		return false, application.ErrOwnerRoleRemovalForbidden
+	}
+
+	var targetMembershipID uuid.UUID
+
+	err = tx.QueryRow(
+		ctx,
+		`
+		SELECT id
+		FROM organization_memberships
+		WHERE organization_id = $1
+			AND id = $2
+		FOR SHARE
+		`,
+		organizationID,
+		membershipID,
+	).Scan(&targetMembershipID)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, application.ErrMembershipNotFound
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("load target membership: %w", err)
+	}
+
+	var canManageEntireRole bool
+
+	err = tx.QueryRow(
+		ctx,
+		`
+		SELECT NOT EXISTS (
+			SELECT 1
+			FROM role_permissions target_permission
+			WHERE target_permission.organization_id = $1
+				AND target_permission.role_id = $2
+			AND NOT EXISTS (
+			    SELECT 1
+			    FROM membership_roles actor_role
+			    JOIN role_permissions actor_permission
+			    	ON actor_permission.organization_id = actor_role.organization_id
+			    	AND actor_permission.role_id = actor_role.role_id
+			    WHERE actor_role.organization_id = $1
+					AND actor_role.membership_id = $3
+					AND actor_permission.permission_code = target_permission.permission_code
+			)
+		)
+		`,
+		organizationID,
+		roleID,
+		actorMembershipID,
+	).Scan(&canManageEntireRole)
+
+	if err != nil {
+		return false, fmt.Errorf("check role removal delegation: %w", err)
+	}
+
+	if !canManageEntireRole {
+		return false, application.ErrPermissionAssignmentForbidden
+	}
+
+	var roleCount int64
+	var assignmentExists bool
+
+	err = tx.QueryRow(
+		ctx,
+		`
+			SELECT COUNT(*), COUNT(*) FILTER (WHERE role_id = $3) > 0
+			FROM membership_roles
+			WHERE organization_id = $1
+				AND membership_id = $2
+		`,
+		organizationID,
+		membershipID,
+		roleID,
+	).Scan(&roleCount, &assignmentExists)
+
+	if err != nil {
+		return false, fmt.Errorf("check membership role assignment count: %w", err)
+	}
+
+	// an absent assignment is an authorized no-op
+	if !assignmentExists {
+		if err := tx.Commit(ctx); err != nil {
+			return false, fmt.Errorf("commit role removal: %w", err)
+		}
+
+		return false, nil
+	}
+
+	// do not leave an existing membership without any role
+
+	if roleCount <= 1 {
+		return false, application.ErrLastMembershipRole
+	}
+
+	result, err := tx.Exec(
+		ctx,
+		`
+			DELETE FROM membership_roles
+			WHERE organization_id = $1
+				AND membership_id = $2
+				AND role_id = $3
+		`,
+		organizationID,
+		membershipID,
+		roleID,
+	)
+
+	if err != nil {
+		return false, fmt.Errorf("delete membership roles: %w", err)
+	}
+
+	isRemoved := result.RowsAffected() == 1
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit membership role removal: %w", err)
+	}
+
+	return isRemoved, nil
 }

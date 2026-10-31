@@ -22,3 +22,7 @@ type RolePermissionRevoker interface {
 type MembershipRoleRepository interface {
 	Assign(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, membershipID uuid.UUID, roleID uuid.UUID) (assigned bool, err error)
 }
+
+type MembershipRoleRemover interface {
+	Remove(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, membershipID uuid.UUID, roleID uuid.UUID) (removed bool, err error)
+}

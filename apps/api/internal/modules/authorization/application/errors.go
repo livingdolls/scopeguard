@@ -11,4 +11,6 @@ var (
 	ErrPermissionNotFound            = errors.New("permission not found")
 	ErrMembershipNotFound            = errors.New("membership not found in organizations")
 	ErrOwnerRoleAssignmentForbidden  = errors.New("owner role requires a dedicated ownership workflow")
+	ErrOwnerRoleRemovalForbidden     = errors.New("owner role requires a dedicated ownership workflow")
+	ErrLastMembershipRole            = errors.New("cannot remove the last role of a membership")
 )
