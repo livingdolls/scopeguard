@@ -26,3 +26,7 @@ type MembershipRoleRepository interface {
 type MembershipRoleRemover interface {
 	Remove(ctx context.Context, actorUserID uuid.UUID, organizationID uuid.UUID, membershipID uuid.UUID, roleID uuid.UUID) (removed bool, err error)
 }
+
+type PermissionReader interface {
+	HasPermission(ctx context.Context, userID uuid.UUID, organizationID uuid.UUID, permissionCode string) (bool, error)
+}
