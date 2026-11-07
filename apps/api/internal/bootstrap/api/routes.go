@@ -37,6 +37,7 @@ func NewRouter(pool *pgxpool.Pool, cfg Config, logger *slog.Logger) (*gin.Engine
 		return nil, fmt.Errorf("initialize identity module: %w", err)
 	}
 	organization := newOrganization(pool, logger)
+	authorization := newAuthorization(pool, logger)
 	system := newSystem(pool, logger)
 
 	system.health.RegisterRoutes(router)
@@ -50,6 +51,10 @@ func NewRouter(pool *pgxpool.Pool, cfg Config, logger *slog.Logger) (*gin.Engine
 	protected.Use(identity.requireAuth)
 	identity.handler.RegisterProtectedRoutes(protected)
 	organization.RegisterRoutes(protected)
+
+	if err := authorization.handler.RegisterRoutes(protected, authorization.guard); err != nil {
+		return nil, fmt.Errorf("register authorization routes: %w", err)
+	}
 
 	return router, nil
 }

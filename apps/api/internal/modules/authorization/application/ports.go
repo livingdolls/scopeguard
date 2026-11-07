@@ -7,6 +7,13 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/domain"
 )
 
+type PermissionCatalogEntry struct {
+	Code        string
+	Resource    string
+	Action      string
+	Description string
+}
+
 type RoleRepository interface {
 	Insert(ctx context.Context, role *domain.Role) error
 }
@@ -29,4 +36,8 @@ type MembershipRoleRemover interface {
 
 type PermissionReader interface {
 	HasPermission(ctx context.Context, userID uuid.UUID, organizationID uuid.UUID, permissionCode string) (bool, error)
+}
+
+type PermissionCatalogReader interface {
+	List(ctx context.Context) ([]PermissionCatalogEntry, error)
 }
