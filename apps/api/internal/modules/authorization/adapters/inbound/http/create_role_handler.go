@@ -13,7 +13,7 @@ import (
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/authctx"
 )
 
-const maxCreateRoleBodySize = 16 << 10 // 16Kb
+const maxAuthorizationJSONBodySize = 16 << 10 // 16Kb
 
 type createRoleRequest struct {
 	Name string `json:"name"`
@@ -50,7 +50,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 		return
 	}
 
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxCreateRoleBodySize)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAuthorizationJSONBodySize)
 
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields() // tolak properti  yang tidak di definisikan di createRoleRequest
@@ -58,7 +58,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	var request createRoleRequest
 
 	if err := decoder.Decode(&request); err != nil {
-		writeCreateRoleDecodeError(c, err)
+		writeAuthorizationDecodeError(c, err)
 		return
 	}
 
@@ -68,7 +68,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 			err = errors.New("multiple json values")
 		}
 
-		writeCreateRoleDecodeError(c, err)
+		writeAuthorizationDecodeError(c, err)
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	})
 }
 
-func writeCreateRoleDecodeError(c *gin.Context, err error) {
+func writeAuthorizationDecodeError(c *gin.Context, err error) {
 	var maxBytesErr *http.MaxBytesError
 
 	if errors.As(err, &maxBytesErr) {

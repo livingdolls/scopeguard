@@ -319,6 +319,84 @@
             }
           },
           "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/organizations/{organization_id}/roles/{role_id}/permissions": {
+      "post": {
+        "tags": ["Authorization"],
+        "operationId": "grantRolePermission",
+        "summary": "Grant a permission to a custom role",
+        "description": "Requires role:update and the permission being granted in the selected organization. Effective permissions are checked against PostgreSQL on each request. The target role must belong to this organization and must not be an owner or member system role. The permission must exist in the permission catalog. Repeating an authorized grant is idempotent. Requires application/json, rejects unknown fields and trailing JSON values, and limits the body to 16 KiB.",
+        "parameters": [
+          { "$ref": "#/components/parameters/OrganizationID" },
+          { "$ref": "#/components/parameters/RoleID" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GrantRolePermissionRequest" },
+              "example": { "permission_code": "member:invite" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The permission was already assigned. No assignment was added; added is false.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GrantRolePermissionResponse" },
+                "example": {
+                  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                  "permission_code": "member:invite",
+                  "added": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The permission was assigned to the custom role; added is true.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GrantRolePermissionResponse" },
+                "example": {
+                  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                  "permission_code": "member:invite",
+                  "added": true
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The target role does not belong to this organization, the permission is not registered, or the organization no longer exists when the grant begins.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "roleNotFound": { "value": { "error": "role not found" } },
+                  "permissionNotFound": { "value": { "error": "permission not found" } },
+                  "organizationNotFound": { "value": { "error": "organization not found" } }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Permissions on owner and member system roles cannot be modified.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "system role immutable" }
+              }
+            }
+          },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
@@ -341,6 +419,14 @@
         "description": "A non-zero organization UUID.",
         "schema": { "type": "string", "format": "uuid" },
         "example": "b6b567a8-5354-4b95-9ed7-8bcc69c5c2f9"
+      },
+      "RoleID": {
+        "name": "role_id",
+        "in": "path",
+        "required": true,
+        "description": "A non-zero UUID of a custom role belonging to the selected organization.",
+        "schema": { "type": "string", "format": "uuid" },
+        "example": "420f90b8-91e2-46e8-8a46-ac58c57f56aa"
       }
     },
     "schemas": {
@@ -499,6 +585,33 @@
           }
         }
       },
+      "GrantRolePermissionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["permission_code"],
+        "properties": {
+          "permission_code": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 127,
+            "pattern": "^[a-z][a-z0-9_]{0,62}:[a-z][a-z0-9_]{0,62}$",
+            "description": "A registered resource:action permission that the actor holds in the selected organization.",
+            "example": "member:invite"
+          }
+        }
+      },
+      "GrantRolePermissionResponse": {
+        "type": "object",
+        "required": ["role_id", "permission_code", "added"],
+        "properties": {
+          "role_id": { "type": "string", "format": "uuid" },
+          "permission_code": { "type": "string", "example": "member:invite" },
+          "added": {
+            "type": "boolean",
+            "description": "True for a new assignment (HTTP 201); false when the assignment already exists (HTTP 200)."
+          }
+        }
+      },
       "Role": {
         "type": "object",
         "required": ["id", "organization_id", "name", "slug", "is_system", "created_at", "updated_at"],
@@ -532,7 +645,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "Invalid JSON, invalid fields, invalid organization UUID, or an invalid or expired verification token.",
+        "description": "Invalid JSON, invalid fields, invalid organization or role UUID, invalid permission code, or an invalid or expired verification token.",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }
