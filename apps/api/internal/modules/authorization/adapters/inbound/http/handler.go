@@ -11,23 +11,25 @@ import (
 )
 
 type Handler struct {
-	listPermission      application.ListPermissions
-	listRoles           application.ListRoles
-	createRole          application.CreateRole
-	grantRolePermission application.GrantRolePermission
-	logger              *slog.Logger
+	listPermission       application.ListPermissions
+	listRoles            application.ListRoles
+	createRole           application.CreateRole
+	grantRolePermission  application.GrantRolePermission
+	revokeRolePermission application.RevokeRolePermission
+	logger               *slog.Logger
 }
 
-func NewHandler(listPermission application.ListPermissions, listRoles application.ListRoles, createRole application.CreateRole, grantRolePermission application.GrantRolePermission, logger *slog.Logger) *Handler {
+func NewHandler(listPermission application.ListPermissions, listRoles application.ListRoles, createRole application.CreateRole, grantRolePermission application.GrantRolePermission, revokeRolePermission application.RevokeRolePermission, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Handler{
-		listPermission:      listPermission,
-		listRoles:           listRoles,
-		createRole:          createRole,
-		grantRolePermission: grantRolePermission,
-		logger:              logger,
+		listPermission:       listPermission,
+		listRoles:            listRoles,
+		createRole:           createRole,
+		grantRolePermission:  grantRolePermission,
+		revokeRolePermission: revokeRolePermission,
+		logger:               logger,
 	}
 }
 

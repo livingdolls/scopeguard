@@ -1,8 +1,9 @@
 # Menggunakan ScopeGuard API di Apidog
 
-Spesifikasi OpenAPI 3.0.3 mencakup seluruh 11 operasi HTTP aplikasi yang sudah
-terdaftar, termasuk CreateRole dan Grant permission. Kontrak memuat request body,
-response, parameter organisasi dan role, serta autentikasi Bearer JWT.
+Spesifikasi OpenAPI 3.0.3 mencakup seluruh 12 operasi HTTP aplikasi yang sudah
+terdaftar, termasuk CreateRole, Grant permission, dan Revoke permission. Kontrak
+memuat request body, response, parameter organisasi, role, dan kode permission,
+serta autentikasi Bearer JWT.
 
 ## Ekspor file
 
@@ -56,8 +57,9 @@ berjalan. Sumber Git repository juga dapat diarahkan ke file spesifikasi proyek.
 5. Pilih **Bearer Token** pada autentikasi request yang dilindungi dan isi token
    tersebut. Token berlaku selama 15 menit.
 6. Untuk operasi authorization, isi parameter `organization_id` dengan UUID
-   organisasi yang dapat diakses akun tersebut. Untuk Grant permission, isi juga
-   `role_id` dengan UUID custom role di organisasi yang sama.
+   organisasi yang dapat diakses akun tersebut. Untuk Grant atau Revoke
+   permission, isi juga `role_id` dengan UUID custom role di organisasi yang
+   sama. Revoke menerima `permission_code` sebagai parameter path.
 
 ## Endpoint authorization
 
@@ -71,8 +73,9 @@ PostgreSQL untuk setiap request.
 | GET | `/v1/organizations/{organization_id}/roles` | `role:read` |
 | POST | `/v1/organizations/{organization_id}/roles` | `role:create` |
 | POST | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `role:update` dan permission yang akan diberikan |
+| DELETE | `/v1/organizations/{organization_id}/roles/{role_id}/permissions/{permission_code}` | `role:update` dan permission yang akan dicabut |
 
-## Mencoba CreateRole dan Grant permission
+## Mencoba CreateRole, Grant permission, dan Revoke permission
 
 Gunakan Bearer token dari alur login di atas. Untuk request POST, atur
 `Content-Type: application/json`. Body CreateRole dan Grant permission dibatasi
@@ -147,20 +150,49 @@ dikirim pada path:
 
 Request berulang tetap memeriksa hak aktor sebelum mengembalikan `added: false`.
 
+### 4. Cabut permission dari role
+
+Kirim `DELETE /v1/organizations/{organization_id}/roles/{role_id}/permissions/{permission_code}`.
+Gunakan `organization_id` dan `role_id` yang sama, lalu isi parameter
+`permission_code` dengan `member:invite`. Request ini tidak memerlukan body
+maupun header Content-Type.
+
+Aktor tetap harus memiliki `role:update` dan `member:invite` pada organisasi
+tersebut. Permission hanya dicabut dari custom role yang dituju.
+
+| Kondisi | HTTP status | Field `removed` |
+| --- | --- | --- |
+| Assignment berhasil dicabut | `200 OK` | `true` |
+| Assignment sudah tidak ada | `200 OK` | `false` |
+
+Contoh response untuk pencabutan yang menghapus assignment:
+
+```json
+{
+  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+  "permission_code": "member:invite",
+  "removed": true
+}
+```
+
+Ulangi request yang sama untuk memperoleh `removed: false`. Kedua hasil
+memerlukan otorisasi yang sama; assignment yang sudah tidak ada tetap
+memerlukan permission terdaftar dan hak aktor yang lengkap.
+
 ## Membaca respons error
 
 Error dikembalikan sebagai objek JSON dengan field `error`.
 
-| HTTP status | Penyebab pada CreateRole atau Grant permission |
-| --- | --- |
-| `400 Bad Request` | UUID, JSON, field, slug role, atau format kode permission tidak valid. |
-| `401 Unauthorized` | Bearer token tidak tersedia atau tidak valid, atau akun tidak aktif. |
-| `403 Forbidden` | Aktor bukan anggota tenant atau tidak memiliki permission yang diperlukan. |
-| `404 Not Found` | Target role tidak ditemukan pada tenant atau permission tidak terdaftar. Bisa juga terjadi jika organisasi terhapus setelah pemeriksaan akses. |
-| `409 Conflict` | CreateRole: slug sudah digunakan dalam tenant. Grant permission: target merupakan system role `owner` atau `member`. |
-| `413 Request Entity Too Large` | Body melebihi 16 KiB. |
-| `415 Unsupported Media Type` | Content-Type bukan `application/json`. |
-| `503 Service Unavailable` | Pemeriksaan akses atau layanan pendukung gagal. |
+| HTTP status | CreateRole atau Grant permission | Revoke permission |
+| --- | --- | --- |
+| `400 Bad Request` | UUID, JSON, field, slug role, atau format kode permission tidak valid. | UUID atau format kode permission pada path tidak valid. |
+| `401 Unauthorized` | Bearer token tidak tersedia atau tidak valid, atau akun tidak aktif. | Sama. |
+| `403 Forbidden` | Aktor bukan anggota tenant atau tidak memiliki permission yang diperlukan. | Sama. |
+| `404 Not Found` | Target role tidak ditemukan pada tenant atau permission tidak terdaftar. Bisa juga terjadi jika organisasi terhapus setelah pemeriksaan akses. | Target role tidak ditemukan pada tenant, termasuk role milik tenant lain; permission tidak terdaftar; atau organisasi terhapus setelah pemeriksaan akses. |
+| `409 Conflict` | CreateRole: slug sudah digunakan dalam tenant. Grant permission: target merupakan system role `owner` atau `member`. | Target merupakan system role `owner` atau `member`. |
+| `413 Request Entity Too Large` | Body melebihi 16 KiB. | Tidak digunakan; Revoke tidak membaca body. |
+| `415 Unsupported Media Type` | Content-Type bukan `application/json`. | Tidak digunakan; Revoke tidak memerlukan Content-Type. |
+| `503 Service Unavailable` | Pemeriksaan akses atau layanan pendukung gagal. | Sama. |
 
 JWT mengidentifikasi user; permission pada PostgreSQL menjadi sumber otorisasi.
 Jika `role:create` dicabut setelah token diterbitkan, token yang sama tetap bisa
