@@ -1,0 +1,610 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ScopeGuard API",
+    "version": "1.0.0",
+    "description": "HTTP API for identity, organizations, and tenant authorization. Protected endpoints require a Bearer access token obtained from POST /v1/auth/login."
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Local development" }
+  ],
+  "tags": [
+    { "name": "System", "description": "Health and readiness checks" },
+    { "name": "Identity", "description": "Registration, email verification, and authentication" },
+    { "name": "Organizations", "description": "Organization management" },
+    { "name": "Authorization", "description": "Organization roles and permission catalog" }
+  ],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "tags": ["System"],
+        "operationId": "getHealth",
+        "summary": "Check API health",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The API is running. This check does not query the database.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "example": { "status": "ok" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ready": {
+      "get": {
+        "tags": ["System"],
+        "operationId": "getReadiness",
+        "summary": "Check database readiness",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The database is reachable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadinessResponse" },
+                "example": { "status": "ready" }
+              }
+            }
+          },
+          "503": {
+            "description": "The database is unavailable or the readiness check timed out.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadinessResponse" },
+                "example": { "status": "not_ready" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "tags": ["Identity"],
+        "operationId": "registerUser",
+        "summary": "Register a user",
+        "description": "Queues email verification for a new account. Existing email addresses receive the same accepted response. Requires application/json, rejects unknown fields, and limits the body to 16 KiB. Limited to 5 requests per IP per 15 minutes.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RegisterRequest" },
+              "example": { "email": "user@example.com", "password": "scopeguard example passphrase" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Registration accepted without revealing whether the email is already registered.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RegistrationResponse" },
+                "example": { "message": "If the request can be processed, verification instructions will be sent" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/auth/verify-email": {
+      "post": {
+        "tags": ["Identity"],
+        "operationId": "verifyEmail",
+        "summary": "Verify an email address",
+        "description": "Consumes the single-use verification token delivered by email. Tokens expire after 24 hours. Requires application/json, rejects unknown fields, and limits the body to 16 KiB. Limited to 10 requests per IP per 5 minutes.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/VerifyEmailRequest" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "Email verified. The response has no body." },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "tags": ["Identity"],
+        "operationId": "loginUser",
+        "summary": "Log in and obtain an access token",
+        "description": "Only active, verified accounts can log in. Access tokens expire after 15 minutes. Requires application/json, rejects unknown fields, and limits the body to 16 KiB. Limited to 20 requests per IP per 5 minutes and 5 requests per normalized email per 5 minutes.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginRequest" },
+              "example": { "email": "user@example.com", "password": "scopeguard example passphrase" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Use access_token as the Bearer token for protected endpoints.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": {
+            "description": "Invalid credentials or an account that cannot authenticate.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "invalid credentials" }
+              }
+            }
+          },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "tags": ["Identity"],
+        "operationId": "getCurrentUser",
+        "summary": "Get the authenticated user",
+        "responses": {
+          "200": {
+            "description": "The current user's profile.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/UserProfile" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/organizations": {
+      "post": {
+        "tags": ["Organizations"],
+        "operationId": "createOrganization",
+        "summary": "Create an organization",
+        "description": "Creates an organization owned by the authenticated user. Requires application/json, rejects unknown fields, and limits the body to 16 KiB.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateOrganizationRequest" },
+              "example": { "name": "Example Organization", "slug": "example-org" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The organization was created.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Organization" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": {
+            "description": "The organization slug is already in use.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "organization already exists" }
+              }
+            }
+          },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaType" },
+          "500": { "$ref": "#/components/responses/InternalServerError" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/organizations/{organization_id}/permissions": {
+      "get": {
+        "tags": ["Authorization"],
+        "operationId": "listPermissions",
+        "summary": "List the permission catalog",
+        "description": "Returns the permission catalog after checking that the authenticated user has permission:read in the selected organization.",
+        "parameters": [{ "$ref": "#/components/parameters/OrganizationID" }],
+        "responses": {
+          "200": {
+            "description": "The permission catalog.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PermissionsResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
+    "/v1/organizations/{organization_id}/roles": {
+      "get": {
+        "tags": ["Authorization"],
+        "operationId": "listRoles",
+        "summary": "List organization roles",
+        "description": "Requires role:read in the selected organization.",
+        "parameters": [{ "$ref": "#/components/parameters/OrganizationID" }],
+        "responses": {
+          "200": {
+            "description": "The organization's roles.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RolesResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
+      "post": {
+        "tags": ["Authorization"],
+        "operationId": "createRole",
+        "summary": "Create a custom organization role",
+        "description": "Requires role:create in the selected organization. Effective permissions are read from PostgreSQL on each request. Requires application/json, rejects unknown fields and reserved owner/member slugs, and limits the body to 16 KiB.",
+        "parameters": [{ "$ref": "#/components/parameters/OrganizationID" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateRoleRequest" },
+              "example": { "name": "Content Editor", "slug": "content_editor" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The custom role was created without permissions.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Role" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The organization no longer exists when role creation begins.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "The role slug is already in use in this organization.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "role slug already exists" }
+              }
+            }
+          },
+          "413": { "$ref": "#/components/responses/RequestTooLarge" },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Use access_token from POST /v1/auth/login."
+      }
+    },
+    "parameters": {
+      "OrganizationID": {
+        "name": "organization_id",
+        "in": "path",
+        "required": true,
+        "description": "A non-zero organization UUID.",
+        "schema": { "type": "string", "format": "uuid" },
+        "example": "b6b567a8-5354-4b95-9ed7-8bcc69c5c2f9"
+      }
+    },
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ok"] }
+        }
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["ready", "not_ready"] }
+        }
+      },
+      "RegisterRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 320,
+            "description": "Trimmed and converted to lowercase. Maximum 320 bytes after normalization."
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "minLength": 15,
+            "maxLength": 1024,
+            "description": "At least 15 Unicode characters and at most 1024 UTF-8 bytes."
+          }
+        }
+      },
+      "RegistrationResponse": {
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string" }
+        }
+      },
+      "VerifyEmailRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The verification token from the email link."
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email", "maxLength": 320 },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "writeOnly": true,
+            "minLength": 1,
+            "maxLength": 1024,
+            "description": "Maximum 1024 UTF-8 bytes."
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": ["access_token", "token_type", "expires_at"],
+        "properties": {
+          "access_token": { "type": "string", "description": "JWT access token." },
+          "token_type": { "type": "string", "enum": ["Bearer"] },
+          "expires_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "CreateOrganizationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "slug"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trimmed before validation; 1 to 160 Unicode characters after trimming."
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+          }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "required": ["id", "name", "slug", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Permission": {
+        "type": "object",
+        "required": ["code", "resource", "action", "description"],
+        "properties": {
+          "code": { "type": "string", "example": "permission:read" },
+          "resource": { "type": "string", "example": "permission" },
+          "action": { "type": "string", "example": "read" },
+          "description": { "type": "string" }
+        }
+      },
+      "PermissionsResponse": {
+        "type": "object",
+        "required": ["permissions"],
+        "properties": {
+          "permissions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Permission" }
+          }
+        }
+      },
+      "CreateRoleRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "slug"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trimmed before validation; 1 to 80 Unicode characters after trimming."
+          },
+          "slug": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 63,
+            "pattern": "^[a-z][a-z0-9_]{0,62}$",
+            "description": "The system role slugs owner and member are reserved."
+          }
+        }
+      },
+      "Role": {
+        "type": "object",
+        "required": ["id", "organization_id", "name", "slug", "is_system", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organization_id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "slug": { "type": "string" },
+          "is_system": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "RolesResponse": {
+        "type": "object",
+        "required": ["roles"],
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Role" }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": { "type": "string" }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Invalid JSON, invalid fields, invalid organization UUID, or an invalid or expired verification token.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication is required, the token is invalid or expired, or the user is not active.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The user does not have the required permission in this organization.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "access denied" }
+          }
+        }
+      },
+      "RequestTooLarge": {
+        "description": "The JSON request body exceeds 16 KiB.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "request body too large" }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "Content-Type must be application/json.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "Too many requests. Retry after the number of seconds in Retry-After.",
+        "headers": {
+          "Retry-After": {
+            "description": "Seconds to wait before retrying.",
+            "schema": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "too many requests" }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "An internal operation failed.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "error": "internal server error" }
+          }
+        }
+      },
+      "ServiceUnavailable": {
+        "description": "Authentication, authorization, rate limiting, or a backing service is temporarily unavailable.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+          }
+        }
+      }
+    }
+  }
+}

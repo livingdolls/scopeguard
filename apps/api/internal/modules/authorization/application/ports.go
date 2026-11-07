@@ -26,7 +26,7 @@ type RoleListItem struct {
 }
 
 type RoleRepository interface {
-	Insert(ctx context.Context, role *domain.Role) error
+	Insert(ctx context.Context, actorUserID uuid.UUID, role *domain.Role) error
 }
 
 type RolePermissionRepository interface {

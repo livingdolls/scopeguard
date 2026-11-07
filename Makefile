@@ -2,7 +2,7 @@
 .PHONY: help db-up db-down db-status db-logs db-shell \
         migrate-create migrate-up migrate-down \
         migrate-status migrate-version migrate-validate \
-        api-run test vet fmt-check test-race test-integration build
+        api-run api-export test vet fmt-check test-race test-integration build
 
 help:
 	@echo "ScopeGuard Development Commands"
@@ -24,6 +24,7 @@ help:
 	@echo ""
 	@echo "Application:"
 	@echo "  make api-run"
+	@echo "  make api-export  (OpenAPI for Apidog)"
 	@echo "  make test"
 	@echo "  make vet"
 
@@ -65,6 +66,11 @@ migrate-validate:
 
 api-run:
 	cd apps/api && go run ./cmd/api
+
+api-export:
+	mkdir -p dist
+	cp apps/api/internal/platform/openapi/openapi.json dist/openapi.json
+	@echo "OpenAPI exported to dist/openapi.json"
 
 test:
 	cd apps/api && go test ./... -v

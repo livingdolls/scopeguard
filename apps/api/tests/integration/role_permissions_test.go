@@ -116,6 +116,7 @@ func TestNewOrganizationDefaultPermissions(t *testing.T) {
 
 func TestCustomRoleStartsWithoutPermissions(t *testing.T) {
 	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
 
 	organizationID := createRoleTestOrganization(
 		t, pool, ownerID,
@@ -128,6 +129,7 @@ func TestCustomRoleStartsWithoutPermissions(t *testing.T) {
 	_, err := service.Execute(
 		context.Background(),
 		authorizationapp.CreateRoleInput{
+			ActorUserID:    ownerID,
 			OrganizationID: organizationID,
 			Name:           "Auditor",
 			Slug:           "auditor",

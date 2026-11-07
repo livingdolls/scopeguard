@@ -31,22 +31,9 @@ func setupGrantPermissionFixture(
 	t.Helper()
 
 	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
 
 	ctx := context.Background()
-
-	// Activate this test user because only active,
-	// verified accounts may delegate permissions.
-	_, err := pool.Exec(
-		ctx,
-		`UPDATE users
-         SET status = 'active',
-             email_verified_at = NOW()
-         WHERE id = $1`,
-		ownerID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	organizationID := createRoleTestOrganization(
 		t,
@@ -61,6 +48,7 @@ func setupGrantPermissionFixture(
 	role, err := createRole.Execute(
 		ctx,
 		authorizationapp.CreateRoleInput{
+			ActorUserID:    ownerID,
 			OrganizationID: organizationID,
 			Name:           "Editor",
 			Slug:           "editor",
@@ -95,13 +83,20 @@ func (f grantPermissionFixture) input(
 	}
 }
 
-func createPermissionGrantTestRole(t *testing.T, ctx context.Context, pool *pgxpool.Pool, organizationID uuid.UUID) uuid.UUID {
+func createPermissionGrantTestRole(
+	t *testing.T,
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	organizationID uuid.UUID,
+	actorUserID uuid.UUID,
+) uuid.UUID {
 	t.Helper()
 
 	service := authorizationapp.NewCreateRoleService(
 		authorizationpostgres.NewRoleRepository(pool),
 	)
 	output, err := service.Execute(ctx, authorizationapp.CreateRoleInput{
+		ActorUserID:    actorUserID,
 		OrganizationID: organizationID,
 		Name:           "Auditor",
 		Slug:           "auditor",
@@ -117,20 +112,12 @@ func setupPermissionGrant(t *testing.T) (context.Context, *pgxpool.Pool, authori
 	t.Helper()
 
 	pool, _, actorID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, actorID)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	_, err := pool.Exec(ctx,
-		`UPDATE users SET status = 'active', email_verified_at = NOW()
-		 WHERE id = $1`,
-		actorID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	organizationID := createRoleTestOrganization(t, pool, actorID)
-	roleID := createPermissionGrantTestRole(t, ctx, pool, organizationID)
+	roleID := createPermissionGrantTestRole(t, ctx, pool, organizationID, actorID)
 
 	return ctx, pool, authorizationapp.GrantRolePermissionInput{
 		ActorUserID:    actorID,
@@ -313,7 +300,7 @@ func TestGrantRolePermissionRejectsProtectedTargets(t *testing.T) {
 			targetOrganizationID := input.OrganizationID
 			if tt.anotherTenant {
 				targetOrganizationID = createRoleTestOrganization(t, pool, input.ActorUserID)
-				createPermissionGrantTestRole(t, ctx, pool, targetOrganizationID)
+				createPermissionGrantTestRole(t, ctx, pool, targetOrganizationID, input.ActorUserID)
 			}
 
 			err := pool.QueryRow(ctx,
@@ -507,6 +494,7 @@ func TestGrantRolePermissionRejectsCrossTenantRole(t *testing.T) {
 	roleB, err := createRole.Execute(
 		ctx,
 		authorizationapp.CreateRoleInput{
+			ActorUserID:    f.ownerID,
 			OrganizationID: tenantB,
 			Name:           "Auditor",
 			Slug:           "auditor",

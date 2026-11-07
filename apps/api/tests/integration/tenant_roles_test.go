@@ -16,6 +16,24 @@ import (
 	organizationapp "github.com/livingdolls/scopeguard/apps/api/internal/modules/organization/application"
 )
 
+func activateRoleTestUser(t *testing.T, pool *pgxpool.Pool, userID uuid.UUID) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := pool.Exec(ctx,
+		`UPDATE users SET status = 'active', email_verified_at = NOW() WHERE id = $1`,
+		userID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RowsAffected() != 1 {
+		t.Fatal("expected to activate one test user")
+	}
+}
+
 func createRoleTestOrganization(
 	t *testing.T,
 	pool *pgxpool.Pool,

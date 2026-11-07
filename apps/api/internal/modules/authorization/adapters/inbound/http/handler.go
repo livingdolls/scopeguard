@@ -13,16 +13,18 @@ import (
 type Handler struct {
 	listPermission application.ListPermissions
 	listRoles      application.ListRoles
+	createRole     application.CreateRole
 	logger         *slog.Logger
 }
 
-func NewHandler(listPermission application.ListPermissions, listRoles application.ListRoles, logger *slog.Logger) *Handler {
+func NewHandler(listPermission application.ListPermissions, listRoles application.ListRoles, createRole application.CreateRole, logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Handler{
 		listPermission: listPermission,
 		listRoles:      listRoles,
+		createRole:     createRole,
 		logger:         logger,
 	}
 }

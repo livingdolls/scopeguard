@@ -10,6 +10,7 @@ import (
 )
 
 type CreateRoleInput struct {
+	ActorUserID    uuid.UUID
 	OrganizationID uuid.UUID
 	Name           string
 	Slug           string
@@ -46,9 +47,13 @@ func (c *CreateRoleService) Execute(ctx context.Context, input CreateRoleInput) 
 		return CreateRoleOutput{}, err
 	}
 
+	if input.ActorUserID == uuid.Nil {
+		return CreateRoleOutput{}, ErrPermissionAssignmentForbidden
+	}
+
 	now := time.Now().UTC()
 
-	// public facing custom roles must never be system roles
+	// Only custom roles may be created through this workflow.
 	role, err := domain.NewRole(
 		uuid.New(),
 		input.OrganizationID,
@@ -63,8 +68,8 @@ func (c *CreateRoleService) Execute(ctx context.Context, input CreateRoleInput) 
 	}
 
 	// Domain validation must pass before persistence
-	if err := c.repository.Insert(ctx, role); err != nil {
-		return CreateRoleOutput{}, fmt.Errorf("persist: %w", err)
+	if err := c.repository.Insert(ctx, input.ActorUserID, role); err != nil {
+		return CreateRoleOutput{}, fmt.Errorf("persist role: %w", err)
 	}
 
 	return CreateRoleOutput{

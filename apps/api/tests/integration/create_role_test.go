@@ -17,6 +17,7 @@ import (
 
 func TestCreateRolePersistence(t *testing.T) {
 	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
 
 	organizationID := createRoleTestOrganization(
 		t, pool, ownerID,
@@ -34,6 +35,7 @@ func TestCreateRolePersistence(t *testing.T) {
 	output, err := service.Execute(
 		ctx,
 		authorizationapp.CreateRoleInput{
+			ActorUserID:    ownerID,
 			OrganizationID: organizationID,
 			Name:           "Content Editor",
 			Slug:           "content_editor",
@@ -88,6 +90,7 @@ func TestCreateRolePersistence(t *testing.T) {
 
 func TestCreateRoleSlugUniquePerTenant(t *testing.T) {
 	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
 
 	tenantA := createRoleTestOrganization(t, pool, ownerID)
 	tenantB := createRoleTestOrganization(t, pool, ownerID)
@@ -102,6 +105,7 @@ func TestCreateRoleSlugUniquePerTenant(t *testing.T) {
 		_, err := service.Execute(
 			ctx,
 			authorizationapp.CreateRoleInput{
+				ActorUserID:    ownerID,
 				OrganizationID: tenantID,
 				Name:           "Editor",
 				Slug:           "editor",
@@ -144,6 +148,7 @@ func TestCreateRoleOrganizationNotFound(t *testing.T) {
 	_, err := service.Execute(
 		context.Background(),
 		authorizationapp.CreateRoleInput{
+			ActorUserID:    uuid.New(),
 			OrganizationID: uuid.New(),
 			Name:           "Editor",
 			Slug:           "editor",
@@ -163,6 +168,7 @@ func TestCreateRoleOrganizationNotFound(t *testing.T) {
 
 func TestCreateRoleConcurrentDuplicate(t *testing.T) {
 	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
 
 	organizationID := createRoleTestOrganization(
 		t, pool, ownerID,
@@ -187,6 +193,7 @@ func TestCreateRoleConcurrentDuplicate(t *testing.T) {
 			_, err := service.Execute(
 				context.Background(),
 				authorizationapp.CreateRoleInput{
+					ActorUserID:    ownerID,
 					OrganizationID: organizationID,
 					Name:           "Auditor",
 					Slug:           "auditor",
@@ -243,5 +250,125 @@ func TestCreateRoleConcurrentDuplicate(t *testing.T) {
 
 	if count != 1 {
 		t.Fatalf("expected one auditor role, got %d", count)
+	}
+}
+
+func TestCreateRoleRejectsUnverifiedActor(t *testing.T) {
+	pool, _, ownerID := setupVerificationUser(t)
+	organizationID := createRoleTestOrganization(t, pool, ownerID)
+	service := authorizationapp.NewCreateRoleService(
+		authorizationpostgres.NewRoleRepository(pool),
+	)
+
+	ctx := context.Background()
+	_, err := service.Execute(ctx, authorizationapp.CreateRoleInput{
+		ActorUserID:    ownerID,
+		OrganizationID: organizationID,
+		Name:           "Auditor",
+		Slug:           "auditor",
+	})
+	if !errors.Is(err, authorizationapp.ErrPermissionAssignmentForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+
+	var count int
+	err = pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM roles WHERE organization_id = $1 AND slug = 'auditor'`,
+		organizationID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("unverified actor's role was persisted")
+	}
+}
+
+func TestCreateRoleRequiresPermission(t *testing.T) {
+	pool, _, ownerID := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, ownerID)
+	organizationID := createRoleTestOrganization(t, pool, ownerID)
+	ctx := context.Background()
+
+	// Remove role:create from the owner's system role.
+	result, err := pool.Exec(ctx,
+		`DELETE FROM role_permissions rp
+		 USING roles r
+		 WHERE rp.organization_id = r.organization_id
+		   AND rp.role_id = r.id
+		   AND r.organization_id = $1
+		   AND r.slug = 'owner'
+		   AND rp.permission_code = 'role:create'`,
+		organizationID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RowsAffected() != 1 {
+		t.Fatal("expected one role:create permission removed")
+	}
+
+	service := authorizationapp.NewCreateRoleService(
+		authorizationpostgres.NewRoleRepository(pool),
+	)
+	_, err = service.Execute(ctx, authorizationapp.CreateRoleInput{
+		ActorUserID:    ownerID,
+		OrganizationID: organizationID,
+		Name:           "Unauthorized Editor",
+		Slug:           "unauthorized_editor",
+	})
+	if !errors.Is(err, authorizationapp.ErrPermissionAssignmentForbidden) {
+		t.Fatalf("expected forbidden, got %v", err)
+	}
+
+	var count int
+	err = pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM roles
+		 WHERE organization_id = $1 AND slug = 'unauthorized_editor'`,
+		organizationID,
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("unauthorized role was persisted")
+	}
+}
+
+func TestCreateRoleRejectsCrossTenantActor(t *testing.T) {
+	pool, _, actorA := setupVerificationUser(t)
+	_, _, actorB := setupVerificationUser(t)
+	activateRoleTestUser(t, pool, actorA)
+	activateRoleTestUser(t, pool, actorB)
+
+	// Tenant A establishes actor A's membership and role:create permission.
+	createRoleTestOrganization(t, pool, actorA)
+	tenantB := createRoleTestOrganization(t, pool, actorB)
+	service := authorizationapp.NewCreateRoleService(
+		authorizationpostgres.NewRoleRepository(pool),
+	)
+
+	ctx := context.Background()
+	_, err := service.Execute(ctx, authorizationapp.CreateRoleInput{
+		ActorUserID:    actorA,
+		OrganizationID: tenantB,
+		Name:           "Cross Tenant Editor",
+		Slug:           "cross_tenant_editor",
+	})
+	if !errors.Is(err, authorizationapp.ErrPermissionAssignmentForbidden) {
+		t.Fatalf("expected cross-tenant rejection, got %v", err)
+	}
+
+	var count int
+	err = pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM roles
+		 WHERE organization_id = $1 AND slug = 'cross_tenant_editor'`,
+		tenantB,
+	).Scan(&count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("cross-tenant role was persisted")
 	}
 }

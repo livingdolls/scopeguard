@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/httpapi"
+	"github.com/livingdolls/scopeguard/apps/api/internal/platform/openapi"
 	"github.com/livingdolls/scopeguard/apps/api/internal/platform/ratelimit"
 )
 
@@ -42,6 +43,7 @@ func NewRouter(pool *pgxpool.Pool, cfg Config, logger *slog.Logger) (*gin.Engine
 
 	system.health.RegisterRoutes(router)
 	system.readiness.RegisterRoutes(router)
+	openapi.RegisterRoutes(router)
 
 	public := router.Group("/v1")
 	public.Use(ratelimit.LimitIP(limiter, rules))

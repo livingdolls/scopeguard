@@ -12,15 +12,18 @@ import (
 
 type fakeRoleRepository struct {
 	calls    int
+	actorID  uuid.UUID
 	received *domain.Role
 	err      error
 }
 
 func (f *fakeRoleRepository) Insert(
 	ctx context.Context,
+	actorUserID uuid.UUID,
 	role *domain.Role,
 ) error {
 	f.calls++
+	f.actorID = actorUserID
 	f.received = role
 	return f.err
 }
@@ -30,10 +33,12 @@ func TestCreateRoleSuccess(t *testing.T) {
 	service := NewCreateRoleService(repo)
 
 	organizationID := uuid.New()
+	actorID := uuid.New()
 
 	output, err := service.Execute(
 		context.Background(),
 		CreateRoleInput{
+			ActorUserID:    actorID,
 			OrganizationID: organizationID,
 			Name:           " Content Editor ",
 			Slug:           "content_editor",
@@ -46,6 +51,9 @@ func TestCreateRoleSuccess(t *testing.T) {
 
 	if repo.calls != 1 {
 		t.Fatal("expected one repository call")
+	}
+	if repo.actorID != actorID {
+		t.Fatal("repository received incorrect actor")
 	}
 
 	if output.ID == uuid.Nil {
@@ -81,16 +89,27 @@ func TestCreateRoleRejectsInvalidInput(t *testing.T) {
 		want  error
 	}{
 		{
+			name: "missing actor",
+			input: CreateRoleInput{
+				OrganizationID: uuid.New(),
+				Name:           "Editor",
+				Slug:           "editor",
+			},
+			want: ErrPermissionAssignmentForbidden,
+		},
+		{
 			name: "missing organization",
 			input: CreateRoleInput{
-				Name: "Editor",
-				Slug: "editor",
+				ActorUserID: uuid.New(),
+				Name:        "Editor",
+				Slug:        "editor",
 			},
 			want: domain.ErrInvalidRoleOrganizationID,
 		},
 		{
 			name: "empty name",
 			input: CreateRoleInput{
+				ActorUserID:    uuid.New(),
 				OrganizationID: uuid.New(),
 				Name:           "",
 				Slug:           "editor",
@@ -100,6 +119,7 @@ func TestCreateRoleRejectsInvalidInput(t *testing.T) {
 		{
 			name: "invalid slug",
 			input: CreateRoleInput{
+				ActorUserID:    uuid.New(),
 				OrganizationID: uuid.New(),
 				Name:           "Editor",
 				Slug:           "Editor",
@@ -109,6 +129,7 @@ func TestCreateRoleRejectsInvalidInput(t *testing.T) {
 		{
 			name: "reserved owner slug",
 			input: CreateRoleInput{
+				ActorUserID:    uuid.New(),
 				OrganizationID: uuid.New(),
 				Name:           "Owner",
 				Slug:           "owner",
@@ -151,6 +172,7 @@ func TestCreateRoleRepositoryError(t *testing.T) {
 	_, err := service.Execute(
 		context.Background(),
 		CreateRoleInput{
+			ActorUserID:    uuid.New(),
 			OrganizationID: uuid.New(),
 			Name:           "Editor",
 			Slug:           "editor",
@@ -174,6 +196,7 @@ func TestCreateRoleCanceledContext(t *testing.T) {
 	_, err := service.Execute(
 		ctx,
 		CreateRoleInput{
+			ActorUserID:    uuid.New(),
 			OrganizationID: uuid.New(),
 			Name:           "Editor",
 			Slug:           "editor",

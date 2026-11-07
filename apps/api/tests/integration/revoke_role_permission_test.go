@@ -244,7 +244,7 @@ func TestRevokeRolePermissionRejectsProtectedTargets(t *testing.T) {
 			if tt.anotherTenant {
 				targetOrganizationID = createRoleTestOrganization(t, pool, grantInput.ActorUserID)
 				grantInput.OrganizationID = targetOrganizationID
-				grantInput.RoleID = createPermissionGrantTestRole(t, ctx, pool, targetOrganizationID)
+				grantInput.RoleID = createPermissionGrantTestRole(t, ctx, pool, targetOrganizationID, grantInput.ActorUserID)
 				grant := authorizationapp.NewGrantRolePermissionService(repository)
 				if output, err := grant.Execute(ctx, grantInput); err != nil || !output.Added {
 					t.Fatalf("expected initial grant in other tenant, got %+v, %v", output, err)
