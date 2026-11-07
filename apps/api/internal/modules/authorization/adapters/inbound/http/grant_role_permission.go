@@ -1,7 +1,6 @@
 package httpadapter
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -73,7 +72,7 @@ func (h *Handler) GrantRolePermission(c *gin.Context) {
 	}
 
 	output, err := h.grantRolePermission.Execute(
-		context.Background(),
+		c.Request.Context(),
 		application.GrantRolePermissionInput{
 			ActorUserID:    actorUserID,
 			OrganizationID: organizationID,
