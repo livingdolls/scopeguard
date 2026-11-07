@@ -12,7 +12,7 @@
     { "name": "System", "description": "Health and readiness checks" },
     { "name": "Identity", "description": "Registration, email verification, and authentication" },
     { "name": "Organizations", "description": "Organization management" },
-    { "name": "Authorization", "description": "Organization roles and permission catalog" }
+    { "name": "Authorization", "description": "Organization roles, permission catalog, and membership role assignments" }
   ],
   "security": [{ "bearerAuth": [] }],
   "paths": {
@@ -465,6 +465,73 @@
           "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
       }
+    },
+    "/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}": {
+      "post": {
+        "tags": ["Authorization"],
+        "operationId": "assignRoleToMember",
+        "summary": "Assign a role to an organization membership",
+        "description": "Requires member:role_assign and every permission held by the target role in the selected organization. Effective permissions are checked against PostgreSQL. Both the target membership and the role must belong to this organization. Custom roles and the member system role can be assigned; the owner role cannot be assigned through this operation. Repeating an authorized assignment is idempotent. All identifiers are supplied in the path. No request body or Content-Type header is required.",
+        "parameters": [
+          { "$ref": "#/components/parameters/OrganizationID" },
+          { "$ref": "#/components/parameters/MembershipID" },
+          { "$ref": "#/components/parameters/RoleID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The membership already holds this role. No assignment was added; assigned is false.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssignRoleToMemberResponse" },
+                "example": {
+                  "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                  "assigned": false
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The role was assigned to the membership; assigned is true.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AssignRoleToMemberResponse" },
+                "example": {
+                  "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                  "assigned": true
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The role or membership does not exist in the selected organization, including a target from another tenant, or the organization no longer exists when the assignment begins.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "roleNotFound": { "value": { "error": "role not found" } },
+                  "membershipNotFound": { "value": { "error": "membership not found" } },
+                  "organizationNotFound": { "value": { "error": "organization not found" } }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The owner role cannot be assigned through this operation.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "error": "owner role assignment forbidden" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
     }
   },
   "components": {
@@ -489,9 +556,17 @@
         "name": "role_id",
         "in": "path",
         "required": true,
-        "description": "A non-zero UUID of a custom role belonging to the selected organization.",
+        "description": "A non-zero UUID of a role belonging to the selected organization. Each operation defines which system roles it permits.",
         "schema": { "type": "string", "format": "uuid" },
         "example": "420f90b8-91e2-46e8-8a46-ac58c57f56aa"
+      },
+      "MembershipID": {
+        "name": "membership_id",
+        "in": "path",
+        "required": true,
+        "description": "A non-zero UUID of an existing membership in the selected organization. This is the membership ID, not the user ID.",
+        "schema": { "type": "string", "format": "uuid" },
+        "example": "c2df2916-9d17-4d4c-8925-f647777a895c"
       },
       "PermissionCode": {
         "name": "permission_code",
@@ -702,6 +777,18 @@
           }
         }
       },
+      "AssignRoleToMemberResponse": {
+        "type": "object",
+        "required": ["membership_id", "role_id", "assigned"],
+        "properties": {
+          "membership_id": { "type": "string", "format": "uuid" },
+          "role_id": { "type": "string", "format": "uuid" },
+          "assigned": {
+            "type": "boolean",
+            "description": "True for a new assignment (HTTP 201); false when the membership already holds the role (HTTP 200)."
+          }
+        }
+      },
       "Role": {
         "type": "object",
         "required": ["id", "organization_id", "name", "slug", "is_system", "created_at", "updated_at"],
@@ -735,7 +822,7 @@
     },
     "responses": {
       "BadRequest": {
-        "description": "Invalid JSON, invalid fields, invalid organization or role UUID, invalid permission code, or an invalid or expired verification token.",
+        "description": "Invalid JSON, invalid fields, invalid organization, membership, or role UUID, invalid permission code, or an invalid or expired verification token.",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/ErrorResponse" }

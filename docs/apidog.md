@@ -1,9 +1,9 @@
 # Menggunakan ScopeGuard API di Apidog
 
-Spesifikasi OpenAPI 3.0.3 mencakup seluruh 12 operasi HTTP aplikasi yang sudah
-terdaftar, termasuk CreateRole, Grant permission, dan Revoke permission. Kontrak
-memuat request body, response, parameter organisasi, role, dan kode permission,
-serta autentikasi Bearer JWT.
+Spesifikasi OpenAPI 3.0.3 mencakup seluruh 13 operasi HTTP aplikasi yang sudah
+terdaftar, termasuk CreateRole, Grant permission, Revoke permission, dan
+AssignRoleToMember. Kontrak memuat request body, response, parameter organisasi,
+membership, role, dan kode permission, serta autentikasi Bearer JWT.
 
 ## Ekspor file
 
@@ -60,6 +60,9 @@ berjalan. Sumber Git repository juga dapat diarahkan ke file spesifikasi proyek.
    organisasi yang dapat diakses akun tersebut. Untuk Grant atau Revoke
    permission, isi juga `role_id` dengan UUID custom role di organisasi yang
    sama. Revoke menerima `permission_code` sebagai parameter path.
+7. Untuk AssignRoleToMember, isi `membership_id` dengan UUID keanggotaan target
+   dan `role_id` dengan UUID role dari organisasi yang sama. `membership_id`
+   berbeda dari ID user.
 
 ## Endpoint authorization
 
@@ -74,13 +77,16 @@ PostgreSQL untuk setiap request.
 | POST | `/v1/organizations/{organization_id}/roles` | `role:create` |
 | POST | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `role:update` dan permission yang akan diberikan |
 | DELETE | `/v1/organizations/{organization_id}/roles/{role_id}/permissions/{permission_code}` | `role:update` dan permission yang akan dicabut |
+| POST | `/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}` | `member:role_assign` dan seluruh permission pada role target |
 
-## Mencoba CreateRole, Grant permission, dan Revoke permission
+## Mencoba role, permission, dan assignment membership
 
-Gunakan Bearer token dari alur login di atas. Untuk request POST, atur
-`Content-Type: application/json`. Body CreateRole dan Grant permission dibatasi
-16 KiB; field yang tidak dikenal dan beberapa nilai JSON dalam satu body ditolak.
-Identitas aktor diambil dari JWT.
+Gunakan Bearer token dari alur login di atas. Untuk membuat organisasi, membuat
+role, dan Grant permission, atur `Content-Type: application/json`. Body
+CreateRole dan Grant permission dibatasi 16 KiB; field yang tidak dikenal dan
+beberapa nilai JSON dalam satu body ditolak. Revoke permission dan
+AssignRoleToMember tidak memerlukan body maupun header Content-Type. Identitas
+aktor diambil dari JWT.
 
 ### 1. Buat organisasi
 
@@ -179,6 +185,37 @@ Ulangi request yang sama untuk memperoleh `removed: false`. Kedua hasil
 memerlukan otorisasi yang sama; assignment yang sudah tidak ada tetap
 memerlukan permission terdaftar dan hak aktor yang lengkap.
 
+### 5. Assign role ke membership
+
+Kirim `POST /v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}`
+tanpa body. Gunakan role yang sudah dibuat dan membership yang sudah ada di
+organisasi tersebut. Ambil `membership_id` dari data uji atau administrasi
+organisasi; nilainya adalah ID keanggotaan, bukan ID user. Operasi ini menambah
+role pada membership yang sudah ada.
+
+Aktor harus memiliki `member:role_assign` dan seluruh permission pada role
+target dalam organisasi yang sama. Jika role memiliki `member:invite`, aktor
+juga harus memiliki permission tersebut. Aturan ini tetap diperiksa untuk
+assignment berulang.
+
+Custom role dan system role `member` dapat diberikan melalui endpoint ini.
+Assignment role `owner` ditolak dengan `409 Conflict`.
+
+| Kondisi | HTTP status | Field `assigned` |
+| --- | --- | --- |
+| Role baru dipasangkan ke membership | `201 Created` | `true` |
+| Membership sudah memiliki role tersebut | `200 OK` | `false` |
+
+Contoh response untuk assignment baru; UUID mengikuti parameter path:
+
+```json
+{
+  "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+  "assigned": true
+}
+```
+
 ## Membaca respons error
 
 Error dikembalikan sebagai objek JSON dengan field `error`.
@@ -193,6 +230,17 @@ Error dikembalikan sebagai objek JSON dengan field `error`.
 | `413 Request Entity Too Large` | Body melebihi 16 KiB. | Tidak digunakan; Revoke tidak membaca body. |
 | `415 Unsupported Media Type` | Content-Type bukan `application/json`. | Tidak digunakan; Revoke tidak memerlukan Content-Type. |
 | `503 Service Unavailable` | Pemeriksaan akses atau layanan pendukung gagal. | Sama. |
+
+Untuk AssignRoleToMember:
+
+| HTTP status | Penyebab |
+| --- | --- |
+| `400 Bad Request` | UUID organisasi, membership, atau role tidak valid. |
+| `401 Unauthorized` | Bearer token tidak tersedia atau tidak valid, atau akun tidak aktif. |
+| `403 Forbidden` | Aktor bukan anggota tenant, tidak memiliki `member:role_assign`, atau tidak memiliki seluruh permission pada role target. |
+| `404 Not Found` | Membership atau role tidak ditemukan pada tenant, termasuk target dari tenant lain; atau organisasi terhapus setelah pemeriksaan akses. |
+| `409 Conflict` | Target assignment adalah role `owner`. |
+| `503 Service Unavailable` | Pemeriksaan akses atau layanan pendukung gagal. |
 
 JWT mengidentifikasi user; permission pada PostgreSQL menjadi sumber otorisasi.
 Jika `role:create` dicabut setelah token diterbitkan, token yang sama tetap bisa

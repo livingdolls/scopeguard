@@ -16,10 +16,18 @@ type Handler struct {
 	createRole           application.CreateRole
 	grantRolePermission  application.GrantRolePermission
 	revokeRolePermission application.RevokeRolePermission
+	assignRoleToMember   application.AssignRoleToMember
 	logger               *slog.Logger
 }
 
-func NewHandler(listPermission application.ListPermissions, listRoles application.ListRoles, createRole application.CreateRole, grantRolePermission application.GrantRolePermission, revokeRolePermission application.RevokeRolePermission, logger *slog.Logger) *Handler {
+func NewHandler(
+	listPermission application.ListPermissions,
+	listRoles application.ListRoles,
+	createRole application.CreateRole,
+	grantRolePermission application.GrantRolePermission,
+	revokeRolePermission application.RevokeRolePermission,
+	assignRoleToMember application.AssignRoleToMember,
+	logger *slog.Logger) *Handler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -29,6 +37,7 @@ func NewHandler(listPermission application.ListPermissions, listRoles applicatio
 		createRole:           createRole,
 		grantRolePermission:  grantRolePermission,
 		revokeRolePermission: revokeRolePermission,
+		assignRoleToMember:   assignRoleToMember,
 		logger:               logger,
 	}
 }
