@@ -531,6 +531,72 @@
           },
           "503": { "$ref": "#/components/responses/ServiceUnavailable" }
         }
+      },
+      "delete": {
+        "tags": ["Authorization"],
+        "operationId": "removeRoleFromMember",
+        "summary": "Remove a role from an organization membership",
+        "description": "Requires member:role_assign and every permission held by the target role in the selected organization. Effective permissions are checked against PostgreSQL. Both the membership and the role must belong to this organization. The owner role cannot be removed through this operation. An existing assignment cannot be removed if it is the membership's last role. An authorized request is idempotent: it returns HTTP 200 with removed true when an assignment was deleted, or false when it was already absent. Tenant, target, authorization, and owner-role checks still apply to repeated requests. All identifiers are supplied in the path. No request body or Content-Type header is required.",
+        "parameters": [
+          { "$ref": "#/components/parameters/OrganizationID" },
+          { "$ref": "#/components/parameters/MembershipID" },
+          { "$ref": "#/components/parameters/RoleID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The authorized removal completed. removed indicates whether the membership's role assignment was deleted.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RemoveRoleFromMemberResponse" },
+                "examples": {
+                  "removed": {
+                    "value": {
+                      "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                      "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                      "removed": true
+                    }
+                  },
+                  "alreadyAbsent": {
+                    "value": {
+                      "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                      "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                      "removed": false
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The role or membership does not exist in the selected organization, including a target from another tenant, or the organization no longer exists when the removal begins.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "roleNotFound": { "value": { "error": "role not found" } },
+                  "membershipNotFound": { "value": { "error": "membership not found" } },
+                  "organizationNotFound": { "value": { "error": "organization not found" } }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The target is the owner role, or removing the assignment would leave the membership without any role.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "ownerRoleRemovalForbidden": { "value": { "error": "owner role removal forbidden" } },
+                  "lastMembershipRole": { "value": { "error": "cannot remove the last membership role" } }
+                }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
       }
     }
   },
@@ -786,6 +852,18 @@
           "assigned": {
             "type": "boolean",
             "description": "True for a new assignment (HTTP 201); false when the membership already holds the role (HTTP 200)."
+          }
+        }
+      },
+      "RemoveRoleFromMemberResponse": {
+        "type": "object",
+        "required": ["membership_id", "role_id", "removed"],
+        "properties": {
+          "membership_id": { "type": "string", "format": "uuid" },
+          "role_id": { "type": "string", "format": "uuid" },
+          "removed": {
+            "type": "boolean",
+            "description": "True when the membership's role assignment was deleted; false when it was already absent. Both outcomes return HTTP 200 after authorization and target validation."
           }
         }
       },
