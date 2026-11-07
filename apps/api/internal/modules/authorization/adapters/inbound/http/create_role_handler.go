@@ -29,6 +29,8 @@ func (h *Handler) CreateRole(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "authenticated required",
 		})
+
+		return
 	}
 
 	organizationID, err := uuid.Parse(c.Param("organization_id"))
