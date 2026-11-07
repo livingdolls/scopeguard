@@ -14,7 +14,13 @@ func (h *Handler) RegisterRoutes(protected *gin.RouterGroup, guard *PermissionGu
 		return fmt.Errorf("register permission catalog router: %w", err)
 	}
 
+	requiredRoleRead, err := guard.RequirePermission(domain.PermissionRoleRead)
+	if err != nil {
+		return fmt.Errorf("register role listing route: %w", err)
+	}
+
 	protected.GET("/organizations/:organization_id/permissions", requiredRead, h.ListPermissions)
+	protected.GET("/organizations/:organization_id/roles", requiredRoleRead, h.ListRoles)
 
 	return nil
 }

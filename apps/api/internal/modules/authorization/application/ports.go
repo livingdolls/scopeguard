@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/livingdolls/scopeguard/apps/api/internal/modules/authorization/domain"
@@ -12,6 +13,16 @@ type PermissionCatalogEntry struct {
 	Resource    string
 	Action      string
 	Description string
+}
+
+type RoleListItem struct {
+	ID             uuid.UUID
+	OrganizationID uuid.UUID
+	Name           string
+	Slug           string
+	IsSystem       bool
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type RoleRepository interface {
@@ -40,4 +51,8 @@ type PermissionReader interface {
 
 type PermissionCatalogReader interface {
 	List(ctx context.Context) ([]PermissionCatalogEntry, error)
+}
+
+type RoleReader interface {
+	ListByOrganization(ctx context.Context, organizationID uuid.UUID) ([]RoleListItem, error)
 }

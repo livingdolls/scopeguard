@@ -23,8 +23,11 @@ func newAuthorization(pool *pgxpool.Pool, logger *slog.Logger) authorizationModu
 
 	listPermission := authorizationapp.NewListPermissionService(catalogRepository)
 
+	roleReader := authorizationpostgres.NewRoleReader(pool)
+	listRoles := authorizationapp.NewListRolesService(roleReader)
+
 	return authorizationModule{
-		handler: authorizationhttp.NewHandler(listPermission, logger),
+		handler: authorizationhttp.NewHandler(listPermission, listRoles, logger),
 		guard:   authorizationhttp.NewPermissionGuard(evaluator, logger),
 	}
 }
