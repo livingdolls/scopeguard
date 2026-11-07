@@ -43,7 +43,7 @@ func (h *Handler) CreateRole(c *gin.Context) {
 	}
 
 	if c.ContentType() != "application/json" {
-		c.JSON(http.StatusBadRequest, gin.H{
+		c.JSON(http.StatusUnsupportedMediaType, gin.H{
 			"error": "Content-Type must be application/json",
 		})
 
