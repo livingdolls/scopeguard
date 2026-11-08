@@ -39,7 +39,7 @@ func (h *Handler) RegisterRoutes(protected *gin.RouterGroup, guard *PermissionGu
 	protected.POST("/organizations/:organization_id/roles", requiredRoleCreate, h.CreateRole)
 	protected.POST("/organizations/:organization_id/roles/:role_id/permissions", requiredRoleUpdate, h.GrantRolePermission)
 	protected.DELETE("/organizations/:organization_id/roles/:role_id/permissions/:permission_code", requiredRoleUpdate, h.RevokeRolePermission)
-	protected.GET("/organizations/:organization_id/roles/:role_id/permissions", requiredRead, h.ListRolePermissions)
+	protected.GET("/organizations/:organization_id/roles/:role_id/permissions", requiredRoleRead, h.ListRolePermissions)
 	protected.POST("/organizations/:organization_id/memberships/:membership_id/roles/:role_id", requiredMemberRoleAssign, h.AssignRoleToMember)
 	protected.DELETE("/organizations/:organization_id/memberships/:membership_id/roles/:role_id", requiredMemberRoleAssign, h.RemoveRoleFromMember)
 

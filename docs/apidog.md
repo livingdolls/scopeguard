@@ -76,7 +76,7 @@ PostgreSQL untuk setiap request.
 | GET | `/v1/organizations/{organization_id}/permissions` | `permission:read` |
 | GET | `/v1/organizations/{organization_id}/roles` | `role:read` |
 | POST | `/v1/organizations/{organization_id}/roles` | `role:create` |
-| GET | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `permission:read` |
+| GET | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `role:read` |
 | POST | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `role:update` dan permission yang akan diberikan |
 | DELETE | `/v1/organizations/{organization_id}/roles/{role_id}/permissions/{permission_code}` | `role:update` dan permission yang akan dicabut |
 | POST | `/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}` | `member:role_assign` dan seluruh permission pada role target |
@@ -85,7 +85,7 @@ PostgreSQL untuk setiap request.
 ## Melihat permission pada satu role
 
 Kirim `GET /v1/organizations/{organization_id}/roles/{role_id}/permissions`
-dengan Bearer token dan tanpa body. Aktor harus memiliki `permission:read` pada
+dengan Bearer token dan tanpa body. Aktor harus memiliki `role:read` pada
 organisasi yang dipilih. Custom role maupun system role `owner` dan `member`
 dapat dibaca selama role tersebut milik organisasi yang sama.
 
@@ -296,7 +296,7 @@ Untuk ListRolePermissions:
 | --- | --- |
 | `400 Bad Request` | UUID organisasi atau role tidak valid. |
 | `401 Unauthorized` | Bearer token tidak tersedia atau tidak valid, atau akun tidak aktif. |
-| `403 Forbidden` | Aktor bukan anggota tenant atau tidak memiliki `permission:read`. |
+| `403 Forbidden` | Aktor bukan anggota tenant atau tidak memiliki `role:read`. |
 | `404 Not Found` | Role tidak ditemukan pada tenant, termasuk role dari tenant lain; atau organisasi tidak ditemukan saat pembacaan. |
 | `503 Service Unavailable` | Pemeriksaan akses atau pembacaan permission role gagal. |
 

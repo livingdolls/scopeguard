@@ -329,7 +329,7 @@
         "tags": ["Authorization"],
         "operationId": "listRolePermissions",
         "summary": "List the permissions assigned to a role",
-        "description": "Requires permission:read in the selected organization. Returns the permission codes assigned to the selected role, sorted in ascending order. Both custom and system roles can be read. A role with no permissions returns an empty array. The role must belong to the selected organization. No request body or Content-Type header is required.",
+        "description": "Requires role:read in the selected organization. Returns the permission codes assigned to the selected role, sorted in ascending order. Both custom and system roles can be read. A role with no permissions returns an empty array. The role must belong to the selected organization. No request body or Content-Type header is required.",
         "parameters": [
           { "$ref": "#/components/parameters/OrganizationID" },
           { "$ref": "#/components/parameters/RoleID" }
