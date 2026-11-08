@@ -1,7 +1,6 @@
 package httpadapter
 
 import (
-	"context"
 	"errors"
 	"net/http"
 
@@ -18,7 +17,7 @@ type removeRoleFromMemberResponse struct {
 }
 
 func (h *Handler) RemoveRoleFromMember(c *gin.Context) {
-	c.Header("Cache-Control", "no-cache")
+	c.Header("Cache-Control", "no-store")
 
 	actorUserID, authenticated := authctx.UserIDFromContext(c.Request.Context())
 
@@ -28,25 +27,25 @@ func (h *Handler) RemoveRoleFromMember(c *gin.Context) {
 	}
 
 	organizationID, err := uuid.Parse(c.Param("organization_id"))
-	if err != nil {
+	if err != nil || organizationID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid organization_id"})
 		return
 	}
 
 	membershipID, err := uuid.Parse(c.Param("membership_id"))
-	if err != nil {
+	if err != nil || membershipID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid membership_id"})
 		return
 	}
 
 	roleID, err := uuid.Parse(c.Param("role_id"))
-	if err != nil {
+	if err != nil || roleID == uuid.Nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid role_id"})
 		return
 	}
 
 	output, err := h.removeRoleFromMember.Execute(
-		context.Background(),
+		c.Request.Context(),
 		application.RemoveRoleFromMemberInput{
 			ActorUserID:    actorUserID,
 			OrganizationID: organizationID,
