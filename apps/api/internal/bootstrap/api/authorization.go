@@ -38,8 +38,11 @@ func newAuthorization(pool *pgxpool.Pool, logger *slog.Logger) authorizationModu
 	assignToMember := authorizationapp.NewAssignRoleToMemberService(membershipRoleRepository)
 	removeRoleFromMember := authorizationapp.NewRemoveRoleFromMemberService(membershipRoleRepository)
 
+	rolePermissionReader := authorizationpostgres.NewRolePermissionReader(pool)
+	listRolePermission := authorizationapp.NewListRolePermissionsService(rolePermissionReader)
+
 	return authorizationModule{
-		handler: authorizationhttp.NewHandler(listPermission, listRoles, createRole, grantRolePermission, revokeRolePermission, assignToMember, removeRoleFromMember, logger),
+		handler: authorizationhttp.NewHandler(listPermission, listRoles, createRole, grantRolePermission, revokeRolePermission, assignToMember, removeRoleFromMember, listRolePermission, logger),
 		guard:   authorizationhttp.NewPermissionGuard(evaluator, logger),
 	}
 }

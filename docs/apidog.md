@@ -1,10 +1,10 @@
 # Menggunakan ScopeGuard API di Apidog
 
-Spesifikasi OpenAPI 3.0.3 mencakup seluruh 14 operasi HTTP aplikasi yang sudah
-terdaftar, termasuk CreateRole, Grant permission, Revoke permission,
-AssignRoleToMember, dan RemoveRoleFromMember. Kontrak memuat request body,
-response, parameter organisasi, membership, role, dan kode permission, serta
-autentikasi Bearer JWT.
+Spesifikasi OpenAPI 3.0.3 mencakup seluruh 15 operasi HTTP aplikasi yang sudah
+terdaftar, termasuk CreateRole, ListRolePermissions, Grant permission, Revoke
+permission, AssignRoleToMember, dan RemoveRoleFromMember. Kontrak memuat request
+body, response, parameter organisasi, membership, role, dan kode permission,
+serta autentikasi Bearer JWT.
 
 ## Ekspor file
 
@@ -76,10 +76,35 @@ PostgreSQL untuk setiap request.
 | GET | `/v1/organizations/{organization_id}/permissions` | `permission:read` |
 | GET | `/v1/organizations/{organization_id}/roles` | `role:read` |
 | POST | `/v1/organizations/{organization_id}/roles` | `role:create` |
+| GET | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `permission:read` |
 | POST | `/v1/organizations/{organization_id}/roles/{role_id}/permissions` | `role:update` dan permission yang akan diberikan |
 | DELETE | `/v1/organizations/{organization_id}/roles/{role_id}/permissions/{permission_code}` | `role:update` dan permission yang akan dicabut |
 | POST | `/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}` | `member:role_assign` dan seluruh permission pada role target |
 | DELETE | `/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}` | `member:role_assign` dan seluruh permission pada role target |
+
+## Melihat permission pada satu role
+
+Kirim `GET /v1/organizations/{organization_id}/roles/{role_id}/permissions`
+dengan Bearer token dan tanpa body. Aktor harus memiliki `permission:read` pada
+organisasi yang dipilih. Custom role maupun system role `owner` dan `member`
+dapat dibaca selama role tersebut milik organisasi yang sama.
+
+Response `200 OK` memuat `role_id` dan `permissions` berupa array kode permission
+yang diurutkan menaik:
+
+```json
+{
+  "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+  "permissions": ["member:invite"]
+}
+```
+
+Role tanpa permission menghasilkan `permissions: []`. Role yang tidak ada atau
+berasal dari tenant lain menghasilkan `404` setelah pemeriksaan akses aktor.
+Gunakan endpoint ini untuk memeriksa hasil Grant dan Revoke permission.
+
+Untuk mengambil katalog permission beserta metadata resource, action, dan
+description, gunakan `GET /v1/organizations/{organization_id}/permissions`.
 
 ## Mencoba role, permission, dan assignment membership
 
@@ -264,6 +289,16 @@ Error dikembalikan sebagai objek JSON dengan field `error`.
 | `413 Request Entity Too Large` | Body melebihi 16 KiB. | Tidak digunakan; Revoke tidak membaca body. |
 | `415 Unsupported Media Type` | Content-Type bukan `application/json`. | Tidak digunakan; Revoke tidak memerlukan Content-Type. |
 | `503 Service Unavailable` | Pemeriksaan akses atau layanan pendukung gagal. | Sama. |
+
+Untuk ListRolePermissions:
+
+| HTTP status | Penyebab |
+| --- | --- |
+| `400 Bad Request` | UUID organisasi atau role tidak valid. |
+| `401 Unauthorized` | Bearer token tidak tersedia atau tidak valid, atau akun tidak aktif. |
+| `403 Forbidden` | Aktor bukan anggota tenant atau tidak memiliki `permission:read`. |
+| `404 Not Found` | Role tidak ditemukan pada tenant, termasuk role dari tenant lain; atau organisasi tidak ditemukan saat pembacaan. |
+| `503 Service Unavailable` | Pemeriksaan akses atau pembacaan permission role gagal. |
 
 Untuk AssignRoleToMember dan RemoveRoleFromMember:
 

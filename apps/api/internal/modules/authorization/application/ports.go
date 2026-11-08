@@ -56,3 +56,7 @@ type PermissionCatalogReader interface {
 type RoleReader interface {
 	ListByOrganization(ctx context.Context, organizationID uuid.UUID) ([]RoleListItem, error)
 }
+
+type RolePermissionReader interface {
+	ListByRole(ctx context.Context, organizationID uuid.UUID, roleID uuid.UUID) ([]string, error)
+}

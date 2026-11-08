@@ -325,6 +325,56 @@
       }
     },
     "/v1/organizations/{organization_id}/roles/{role_id}/permissions": {
+      "get": {
+        "tags": ["Authorization"],
+        "operationId": "listRolePermissions",
+        "summary": "List the permissions assigned to a role",
+        "description": "Requires permission:read in the selected organization. Returns the permission codes assigned to the selected role, sorted in ascending order. Both custom and system roles can be read. A role with no permissions returns an empty array. The role must belong to the selected organization. No request body or Content-Type header is required.",
+        "parameters": [
+          { "$ref": "#/components/parameters/OrganizationID" },
+          { "$ref": "#/components/parameters/RoleID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The role's assigned permission codes. permissions is an array of strings and is empty when the role has no permissions.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RolePermissionsResponse" },
+                "examples": {
+                  "assignedPermissions": {
+                    "value": {
+                      "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                      "permissions": ["member:invite"]
+                    }
+                  },
+                  "emptyRole": {
+                    "value": {
+                      "role_id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                      "permissions": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The role does not exist in the selected organization, including a role from another tenant, or the organization is not found during the read.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "roleNotFound": { "value": { "error": "role not found" } },
+                  "organizationNotFound": { "value": { "error": "organization not found" } }
+                }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      },
       "post": {
         "tags": ["Authorization"],
         "operationId": "grantRolePermission",
@@ -782,6 +832,19 @@
           "permissions": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/Permission" }
+          }
+        }
+      },
+      "RolePermissionsResponse": {
+        "type": "object",
+        "required": ["role_id", "permissions"],
+        "properties": {
+          "role_id": { "type": "string", "format": "uuid" },
+          "permissions": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Permission codes assigned to this role, sorted in ascending order. A role with no permissions returns an empty array.",
+            "items": { "type": "string", "example": "member:invite" }
           }
         }
       },
