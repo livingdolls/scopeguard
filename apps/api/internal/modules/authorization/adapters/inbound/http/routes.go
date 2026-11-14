@@ -34,6 +34,11 @@ func (h *Handler) RegisterRoutes(protected *gin.RouterGroup, guard *PermissionGu
 		return fmt.Errorf("register member role assign route: %w", err)
 	}
 
+	requiredMemberRead, err := guard.RequirePermission(domain.PermissionMemberRead)
+	if err != nil {
+		return fmt.Errorf("register member listing route: %w", err)
+	}
+
 	protected.GET("/organizations/:organization_id/permissions", requiredRead, h.ListPermissions)
 	protected.GET("/organizations/:organization_id/roles", requiredRoleRead, h.ListRoles)
 	protected.POST("/organizations/:organization_id/roles", requiredRoleCreate, h.CreateRole)
@@ -42,6 +47,7 @@ func (h *Handler) RegisterRoutes(protected *gin.RouterGroup, guard *PermissionGu
 	protected.GET("/organizations/:organization_id/roles/:role_id/permissions", requiredRoleRead, h.ListRolePermissions)
 	protected.POST("/organizations/:organization_id/memberships/:membership_id/roles/:role_id", requiredMemberRoleAssign, h.AssignRoleToMember)
 	protected.DELETE("/organizations/:organization_id/memberships/:membership_id/roles/:role_id", requiredMemberRoleAssign, h.RemoveRoleFromMember)
+	protected.GET("/organizations/:organization_id/memberships/:membership_id/roles", requiredMemberRead, h.ListMembershipRoles)
 
 	return nil
 }

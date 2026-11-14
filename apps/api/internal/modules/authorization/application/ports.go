@@ -60,3 +60,7 @@ type RoleReader interface {
 type RolePermissionReader interface {
 	ListByRole(ctx context.Context, organizationID uuid.UUID, roleID uuid.UUID) ([]string, error)
 }
+
+type MembershipRolesReader interface {
+	ListByMembership(ctx context.Context, organizationID uuid.UUID, membershipID uuid.UUID) ([]RoleListItem, error)
+}

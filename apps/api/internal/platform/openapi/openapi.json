@@ -516,6 +516,74 @@
         }
       }
     },
+    "/v1/organizations/{organization_id}/memberships/{membership_id}/roles": {
+      "get": {
+        "tags": ["Authorization"],
+        "operationId": "listMembershipRoles",
+        "summary": "List roles assigned to an organization membership",
+        "description": "Requires member:read in the selected organization. Effective permissions are checked against PostgreSQL on each request. The target membership must belong to this organization. Returns both custom and system roles assigned to the membership, with system roles first, then sorted by slug and role UUID in ascending order. An existing membership with no assigned roles returns an empty array. Supply the membership ID, not the user ID. No request body or Content-Type header is required.",
+        "parameters": [
+          { "$ref": "#/components/parameters/OrganizationID" },
+          { "$ref": "#/components/parameters/MembershipID" }
+        ],
+        "responses": {
+          "200": {
+            "description": "The membership's assigned roles. roles is an array and is empty when the membership has no role assignments.",
+            "headers": {
+              "Cache-Control": {
+                "description": "Prevents storage of the membership role response.",
+                "schema": { "type": "string", "enum": ["no-store"] }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MembershipRolesResponse" },
+                "examples": {
+                  "assignedRoles": {
+                    "value": {
+                      "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                      "roles": [
+                        {
+                          "id": "420f90b8-91e2-46e8-8a46-ac58c57f56aa",
+                          "organization_id": "b6b567a8-5354-4b95-9ed7-8bcc69c5c2f9",
+                          "name": "Content Editor",
+                          "slug": "content_editor",
+                          "is_system": false,
+                          "created_at": "2026-11-14T00:00:00Z",
+                          "updated_at": "2026-11-14T00:00:00Z"
+                        }
+                      ]
+                    }
+                  },
+                  "noAssignedRoles": {
+                    "value": {
+                      "membership_id": "c2df2916-9d17-4d4c-8925-f647777a895c",
+                      "roles": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "The membership does not exist in the selected organization, including a membership from another tenant, or the organization is not found during the read.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "examples": {
+                  "membershipNotFound": { "value": { "error": "membership not found" } },
+                  "organizationNotFound": { "value": { "error": "organization not found" } }
+                }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+        }
+      }
+    },
     "/v1/organizations/{organization_id}/memberships/{membership_id}/roles/{role_id}": {
       "post": {
         "tags": ["Authorization"],
@@ -845,6 +913,22 @@
             "uniqueItems": true,
             "description": "Permission codes assigned to this role, sorted in ascending order. A role with no permissions returns an empty array.",
             "items": { "type": "string", "example": "member:invite" }
+          }
+        }
+      },
+      "MembershipRolesResponse": {
+        "type": "object",
+        "required": ["membership_id", "roles"],
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The target membership ID, not the user ID."
+          },
+          "roles": {
+            "type": "array",
+            "description": "Roles assigned to the membership, with system roles first, then sorted by slug and role UUID in ascending order. An existing membership with no assigned roles returns an empty array.",
+            "items": { "$ref": "#/components/schemas/Role" }
           }
         }
       },
