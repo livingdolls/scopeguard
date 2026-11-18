@@ -16,6 +16,9 @@ const (
 	PermissionRoleDelete = "role:delete"
 
 	PermissionPermissionRead = "permission:read"
+
+	PermissionResourceAccess = "resource:access"
+	PermissionResourceAdmin  = "resource:admin"
 )
 
 func BuiltInPermissionCodes() []string {
@@ -32,5 +35,7 @@ func BuiltInPermissionCodes() []string {
 		PermissionRoleUpdate,
 		PermissionRoleDelete,
 		PermissionPermissionRead,
+		PermissionResourceAccess,
+		PermissionResourceAdmin,
 	}
 }

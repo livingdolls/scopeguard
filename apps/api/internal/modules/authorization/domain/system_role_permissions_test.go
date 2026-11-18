@@ -9,18 +9,30 @@ func TestDefaultSystemRolePermissions(t *testing.T) {
 	owner := DefaultSystemRolePermissions(RoleOwner)
 	member := DefaultSystemRolePermissions(RoleMember)
 
-	if len(owner) != 12 {
+	if len(owner) != 14 {
 		t.Fatalf(
-			"expected 12 owner permissions, got %d",
+			"expected 14 owner permissions, got %d",
 			len(owner),
 		)
 	}
 
-	if len(member) != 4 {
+	if len(member) != 5 {
 		t.Fatalf(
-			"expected 4 member permissions, got %d",
+			"expected 5 member permissions, got %d",
 			len(member),
 		)
+	}
+
+	if !slices.Contains(owner, PermissionResourceAccess) {
+		t.Fatal("owner must have resource access")
+	}
+
+	if !slices.Contains(owner, PermissionResourceAdmin) {
+		t.Fatal("owner must have resource admin")
+	}
+
+	if !slices.Contains(member, PermissionResourceAccess) {
+		t.Fatal("member must have resource access")
 	}
 
 	catalog := BuiltInPermissionCodes()
@@ -49,6 +61,7 @@ func TestDefaultSystemRolePermissions(t *testing.T) {
 		PermissionRoleCreate,
 		PermissionMemberRoleAssign,
 		PermissionOrganizationDelete,
+		PermissionResourceAdmin,
 	} {
 		if slices.Contains(member, forbidden) {
 			t.Fatalf(

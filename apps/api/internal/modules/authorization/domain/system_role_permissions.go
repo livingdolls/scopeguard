@@ -24,6 +24,9 @@ func DefaultSystemRolePermissions(slug string) []string {
 			PermissionRoleDelete,
 
 			PermissionPermissionRead,
+
+			PermissionResourceAccess,
+			PermissionResourceAdmin,
 		}
 
 	case RoleMember:
@@ -32,6 +35,8 @@ func DefaultSystemRolePermissions(slug string) []string {
 			PermissionMemberRead,
 			PermissionRoleRead,
 			PermissionPermissionRead,
+
+			PermissionResourceAccess,
 		}
 
 	default:

@@ -81,9 +81,9 @@ func TestAuthorizationPermissionCatalogHTTP(t *testing.T) {
 
 	decodeAuthHTTPJSON(t, response, &catalog)
 
-	if len(catalog.Permissions) != 12 {
+	if len(catalog.Permissions) != 14 {
 		t.Fatalf(
-			"expected 12 catalog permissions, got %d",
+			"expected 14 catalog permissions, got %d",
 			len(catalog.Permissions),
 		)
 	}
